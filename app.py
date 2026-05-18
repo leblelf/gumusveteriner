@@ -13,11 +13,14 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from flask import Flask, Response, request, send_from_directory
+
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "gumus_veteriner.db"
-HOST = "127.0.0.1"
-PORT = 8000
+HOST = "0.0.0.0"
+PORT = int(os.environ.get("PORT", 5000))
+app = Flask(__name__, static_folder=None)
 
 
 def connect() -> sqlite3.Connection:
@@ -907,6 +910,73 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json({"message": "Kullanici silindi"})
 
 
+class FlaskGumusVeterinerAdapter(GumusVeterinerHandler):
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self.headers = request.headers
+        self._response: Response | None = None
+
+    def read_json(self) -> dict:
+        return request.get_json(silent=True) or {}
+
+    def send_json(self, payload: dict | list, status: HTTPStatus = HTTPStatus.OK) -> None:
+        body = json.dumps(payload, ensure_ascii=False)
+        self._response = Response(body, status=int(status), content_type="application/json; charset=utf-8")
+
+    def flask_response(self) -> Response:
+        return self._response or Response(
+            json.dumps({"error": "Yanıt oluşturulamadı"}, ensure_ascii=False),
+            status=int(HTTPStatus.INTERNAL_SERVER_ERROR),
+            content_type="application/json; charset=utf-8",
+        )
+
+
+@app.before_request
+def ensure_database_ready() -> None:
+    DB_PATH.parent.mkdir(exist_ok=True)
+    init_db()
+
+
+@app.after_request
+def add_cors_headers(response: Response) -> Response:
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
+
+
+@app.route("/")
+@app.route("/admin")
+@app.route("/admin/login")
+@app.route("/403")
+def serve_app_index() -> Response:
+    return send_from_directory(ROOT / "templates", "index.html")
+
+
+@app.route("/api/<path:_path>", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
+def flask_api(_path: str) -> Response:
+    if request.method == "OPTIONS":
+        return Response(status=int(HTTPStatus.NO_CONTENT))
+    adapter = FlaskGumusVeterinerAdapter(request.full_path.rstrip("?"))
+    if request.method == "GET":
+        adapter.handle_api_get(urlparse(adapter.path))
+    elif request.method == "POST":
+        adapter.do_POST()
+    elif request.method == "PATCH":
+        adapter.do_PATCH()
+    elif request.method == "DELETE":
+        adapter.do_DELETE()
+    return adapter.flask_response()
+
+
+@app.route("/<path:filename>")
+def serve_project_file(filename: str) -> Response:
+    target = ROOT / filename
+    if target.is_file():
+        return send_from_directory(ROOT, filename)
+    return send_from_directory(ROOT / "templates", "index.html")
+
+
 def main() -> None:
     DB_PATH.parent.mkdir(exist_ok=True)
     init_db()
@@ -917,5 +987,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
