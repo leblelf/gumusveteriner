@@ -13,7 +13,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from flask import Flask, Response, request, send_from_directory
+from flask import Flask, Response, render_template, request, send_from_directory
 
 
 ROOT = Path(__file__).resolve().parent
@@ -933,6 +933,8 @@ class FlaskGumusVeterinerAdapter(GumusVeterinerHandler):
 
 @app.before_request
 def ensure_database_ready() -> None:
+    if request.path == "/health":
+        return
     DB_PATH.parent.mkdir(exist_ok=True)
     init_db()
 
@@ -949,8 +951,13 @@ def add_cors_headers(response: Response) -> Response:
 @app.route("/admin")
 @app.route("/admin/login")
 @app.route("/403")
-def serve_app_index() -> Response:
-    return send_from_directory(ROOT / "templates", "index.html")
+def serve_app_index() -> str:
+    return render_template("index.html")
+
+
+@app.route("/health")
+def health() -> tuple[str, int]:
+    return "OK", 200
 
 
 @app.route("/api/<path:_path>", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
@@ -970,11 +977,11 @@ def flask_api(_path: str) -> Response:
 
 
 @app.route("/<path:filename>")
-def serve_project_file(filename: str) -> Response:
+def serve_project_file(filename: str) -> Response | str:
     target = ROOT / filename
     if target.is_file():
         return send_from_directory(ROOT, filename)
-    return send_from_directory(ROOT / "templates", "index.html")
+    return render_template("index.html")
 
 
 def main() -> None:
@@ -988,5 +995,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False)
 
