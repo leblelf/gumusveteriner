@@ -28,6 +28,8 @@
   --shadow:0 18px 50px rgba(0,0,0,.38);
 }
 body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.65;min-height:100vh}
+html{scroll-behavior:smooth}
+img,svg,video{max-width:100%;height:auto}
 body:before{content:"";position:fixed;inset:-20%;z-index:-2;background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(29,158,117,.16),transparent 24%),var(--bg)}
 .cursor-glow{position:fixed;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(29,158,117,.22),transparent 62%);pointer-events:none;z-index:999;transform:translate(-50%,-50%);mix-blend-mode:screen}
 .loader{position:fixed;inset:0;z-index:1000;background:var(--bg);display:grid;place-items:center;transition:.6s opacity,.6s visibility}
@@ -93,7 +95,7 @@ nav{background:rgba(255,255,255,.9);border-bottom:1px solid var(--border);positi
 
 /* ── GRID ── */
 .g3{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:1rem}
-.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}
+.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:1rem}
 .g4{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.85rem}
 
 /* ── CARDS ── */
@@ -319,16 +321,80 @@ body.user-session .guest-order,body.admin-session .guest-order{display:none}
 .demo-pay-note{font-size:12px;color:var(--muted);margin:.25rem 0 .75rem}
 
 @media(max-width:600px){
+  body{font-size:14px;overflow-x:hidden}
+  .cursor-glow,.blob{display:none}
+  nav{height:auto;min-height:62px;align-items:center;overflow:visible;padding:.6rem .8rem;gap:.35rem;scrollbar-width:none}
+  nav::-webkit-scrollbar{display:none}
+  .logo{font-size:1rem;min-width:max-content;margin-right:.25rem}
+  .logo-badge{width:34px;height:34px}
+  .nb{display:none;align-items:center;justify-content:center;font-size:12px;padding:7px 10px;background:color-mix(in srgb,var(--card),transparent 10%);border:1px solid var(--border2)}
+  .mobile-menu-btn{display:inline-flex!important}
+  nav.mobile-open{align-items:flex-start;flex-wrap:wrap}
+  nav.mobile-open .nb{display:inline-flex}
+  nav.mobile-open .mobile-menu-btn{background:var(--teal);color:#fff}
+  nav.mobile-open .logo{width:calc(100% - 56px)}
+  nav.mobile-open .nav-user{display:none!important}
+  nav.mobile-open:after{content:"";flex-basis:100%;height:0}
+  nav.mobile-open .nb:not(.mobile-menu-btn),nav.mobile-open .theme-toggle{flex:1 1 calc(50% - .35rem);min-width:140px}
+  .nb.cta{padding:7px 12px}
+  .theme-toggle{display:none;width:34px;height:34px;min-width:34px}
+  nav.mobile-open .theme-toggle{display:inline-grid}
+  .nav-user{display:none!important}
+  .hero{padding:3rem 1rem 2rem}
   .hero h1{font-size:2rem}
-  nav .nb:not(.cta){display:none}
-  .nb#nav-more{display:flex}
+  .hero p{font-size:.95rem}
+  .hero-btns{display:grid;grid-template-columns:1fr;max-width:320px;margin:0 auto}
+  .btn-w,.btn-ow{width:100%;padding:12px 16px}
+  .stats-row{grid-template-columns:1fr;gap:.65rem;margin-top:1.5rem}
+  .stat{padding:.9rem}
+  .stat-n{font-size:1.55rem}
+  .sec{padding:1.5rem .9rem}
+  .page-top{padding:1.35rem .95rem}
+  .page-top h2{font-size:1.55rem}
+  .sec-title{font-size:1.45rem}
+  .g2,.g3,.g4{grid-template-columns:1fr;gap:.75rem}
+  .pc-img{height:180px}
+  .card,.profile-card,.payment-box,.order-card,.auth-wrap{border-radius:12px}
+  .ci-row{padding:.85rem}
+  .hours-g{grid-template-columns:1fr}
   .frow{grid-template-columns:1fr}
+  input,select,textarea{font-size:16px}
+  #cart-panel{width:100vw}
+  .cart-items{padding:1rem}
+  .ci{align-items:flex-start;gap:.55rem}
+  .qty-ctrl{flex-shrink:0}
   .admin-row{grid-template-columns:1fr}
   .admin-actions{justify-content:flex-start}
   .auth-content{grid-template-columns:1fr}
+  .animal-stage{padding:1rem}
+  .animal-face{width:128px;height:128px}
   .site-footer{flex-direction:column;align-items:flex-start}
   .admin-shell{grid-template-columns:1fr}.admin-sidebar{position:static}
+  .admin-sidebar{display:flex;overflow-x:auto;gap:.4rem;padding:.65rem;border-radius:12px}
+  .side-btn{min-width:max-content;padding:.6rem .75rem}
+  .admin-sidebar .mini-btn{display:none}
+  .admin-grid{grid-template-columns:1fr 1fr}
+  .user-toolbar{display:grid;grid-template-columns:1fr}
+  .profile-head{align-items:flex-start}
+  .profile-item-head{align-items:flex-start}
+  .order-line{grid-template-columns:1fr;gap:.25rem}
   .pay-grid{grid-template-columns:1fr}
+  .whatsapp-float{right:14px;bottom:14px;width:58px;height:58px;border-radius:18px}
+  .whatsapp-float small{display:none}
+  .toast-wrap{left:12px;right:12px;bottom:82px}
+  .toast{font-size:13px}
+}
+
+@media(min-width:601px) and (max-width:980px){
+  nav{height:auto;min-height:64px;overflow-x:auto;padding:.7rem 1rem}
+  .logo{min-width:max-content}
+  .nb{display:inline-flex}
+  .hero{padding:3.5rem 1.25rem 2.5rem}
+  .auth-content{grid-template-columns:1fr}
+  .admin-shell{grid-template-columns:1fr}
+  .admin-sidebar{position:static;display:flex;overflow-x:auto;gap:.5rem}
+  .side-btn{min-width:max-content}
+  .g4{grid-template-columns:repeat(2,1fr)}
 }
 </style>
 </head>
@@ -343,6 +409,7 @@ body.user-session .guest-order,body.admin-session .guest-order{display:none}
     <div class="logo-badge"><img src="/logo.jpeg" alt="Gümüş Veteriner logosu"></div>
     Samsun Gümüş Veteriner
   </div>
+  <button class="nb mobile-menu-btn" type="button" onclick="toggleMobileMenu()">☰ Menü</button>
   <button class="nb" id="nb-home"     onclick="go('home')">Ana Sayfa</button>
   <button class="nb" id="nb-about"    onclick="go('about')">Hakkımızda</button>
   <button class="nb" id="nb-services" onclick="go('services')">Hizmetler</button>
@@ -917,6 +984,12 @@ function toggleTheme(){
   const next=document.documentElement.dataset.theme==='dark'?'light':'dark';
   document.documentElement.dataset.theme=next;
   localStorage.setItem('gvTheme',next);
+}
+function toggleMobileMenu(){
+  document.querySelector('nav')?.classList.toggle('mobile-open');
+}
+function closeMobileMenu(){
+  document.querySelector('nav')?.classList.remove('mobile-open');
 }
 function authHeaders(extra={}){
   const token=userToken || adminToken;
@@ -1711,6 +1784,7 @@ function go(id){
   if(id==='admin' && !adminToken){id='adminLogin';}
   if(id==='profile' && !userToken && !adminToken){id='auth';}
   if(id==='payment' && !PENDING_ORDER){id='order';}
+  closeMobileMenu();
   Object.values(pageMap).forEach(p=>{const el=document.getElementById(p);if(el)el.classList.remove('on');});
   Object.values(navMap).forEach(n=>{const el=document.getElementById(n);if(el)el.classList.remove('on');});
   const page=document.getElementById(pageMap[id]);
