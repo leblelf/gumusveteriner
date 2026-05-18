@@ -1,0 +1,12 @@
+{
+  "folders": [
+    {
+      "name": "Gümüş Veteriner",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "files.encoding": "utf8",
+    "explorer.compactFolders": false
+  }
+}

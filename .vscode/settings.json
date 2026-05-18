@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "python",
+  "files.encoding": "utf8",
+  "editor.formatOnSave": true,
+  "explorer.compactFolders": false
+}
