@@ -1,5 +1,19 @@
 ﻿from __future__ import annotations
 
+"""
+Gumus Veteriner web uygulamasi backend dosyasi.
+
+Bu dosya iki ana isi yapar:
+1. SQLite veritabanini olusturur ve randevu, uye, adres, hayvan, siparis gibi
+   verileri kaydeder.
+2. Railway/Gunicorn icin Flask `app` nesnesini verir. Canli ortamda Railway
+   `gunicorn app:app` komutu ile buradaki `app` degiskenini calistirir.
+
+Not: Dosyada eski stdlib HTTP handler yapisi korunuyor; Flask adaptoru altta bu
+mevcut is mantigini tekrar kullanir. Boylece onceki API kodlari bozulmadan
+Railway uyumlu hale gelir.
+"""
+
 import json
 import hashlib
 import hmac
@@ -20,16 +34,20 @@ ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "gumus_veteriner.db"
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 5000))
+
+# Railway ve Gunicorn bu degiskeni arar: `gunicorn app:app`.
 app = Flask(__name__, static_folder=None)
 
 
 def connect() -> sqlite3.Connection:
+    """SQLite veritabanina baglanir ve satirlari sozluk gibi okunabilir yapar."""
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
     return db
 
 
 def init_db() -> None:
+    """Uygulama icin gereken tum tablolar yoksa olusturulur."""
     with connect() as db:
         db.executescript(
             """
@@ -157,6 +175,7 @@ def init_db() -> None:
 
 
 def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    """Eski veritabanlarina yeni kolon eklemek icin guvenli migration yardimcisi."""
     columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
     if column not in columns:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
@@ -167,6 +186,7 @@ def row_to_dict(row: sqlite3.Row) -> dict:
 
 
 def validate_phone(phone: str) -> str:
+    """Telefonu 05XXXXXXXXX formatinda zorunlu ve temiz hale getirir."""
     clean = re.sub(r"\s+", "", phone or "")
     if not re.fullmatch(r"0[0-9]{10}", clean):
         raise ValueError("Gecerli telefon: 05XX XXX XX XX")
@@ -181,6 +201,7 @@ def validate_email(email: str) -> str:
 
 
 def hash_password(password: str, salt: bytes | None = None) -> tuple[str, str]:
+    """Sifreleri duz metin yerine PBKDF2 hash + salt olarak saklar."""
     if len(password or "") < 6:
         raise ValueError("Sifre en az 6 karakter olmali")
     salt = salt or os.urandom(16)
@@ -194,6 +215,7 @@ def verify_password(password: str, password_hash: str, password_salt: str) -> bo
 
 
 def seed_admin(db: sqlite3.Connection) -> None:
+    """Ilk kurulumda varsayilan admin kullanicisini olusturur."""
     email = "admin@gumusveteriner.com"
     if db.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
         return
@@ -216,6 +238,7 @@ def seed_admin(db: sqlite3.Connection) -> None:
 
 
 def validate_appointment(data: dict) -> dict:
+    """Randevu formundan gelen zorunlu alanlari ve tarih araligini kontrol eder."""
     required = ["first_name", "last_name", "phone", "pet_type", "service", "appt_date", "appt_time"]
     for field in required:
         if not str(data.get(field, "")).strip():
@@ -235,6 +258,13 @@ def validate_appointment(data: dict) -> dict:
 
 
 class GumusVeterinerHandler(SimpleHTTPRequestHandler):
+    """Eski local sunucu/API is mantigi.
+
+    Bu sinif randevu, siparis, uye, admin ve profil API'lerini yonetir.
+    Flask adaptoru bu metodlari tekrar kullanarak Railway'de de ayni
+    davranisin calismasini saglar.
+    """
+
     def translate_path(self, path: str) -> str:
         parsed = urlparse(path)
         if parsed.path in {"/", "/admin/login", "/admin", "/403"}:
@@ -398,6 +428,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def handle_api_get(self, parsed) -> None:
+        """GET istekleri: urunler, profil, admin listeleri ve istatistikler."""
         if parsed.path == "/api/products":
             query = parse_qs(parsed.query)
             category = query.get("category", [None])[0]
@@ -496,6 +527,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json({"error": "Endpoint bulunamadi"}, HTTPStatus.NOT_FOUND)
 
     def create_appointment(self) -> None:
+        """Online randevu formunu kaydeder ve hatirlatma kayitlarini olusturur."""
         try:
             data = validate_appointment(self.read_json())
         except (json.JSONDecodeError, ValueError) as exc:
@@ -531,6 +563,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json(row_to_dict(row), HTTPStatus.CREATED)
 
     def create_reminder_rows(self, db: sqlite3.Connection, appointment_id: int, data: dict) -> None:
+        """Randevu yaklasinca gonderilecek SMS/e-posta hatirlatma kayitlari."""
         try:
             appt_at = datetime.strptime(f"{data['appt_date']} {data['appt_time']}", "%Y-%m-%d %H:%M")
         except ValueError:
@@ -554,6 +587,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 )
 
     def create_order(self) -> None:
+        """Sepetteki urunleri siparise cevirir, stoktan duser ve demo odeme bilgisini saklar."""
         try:
             data = self.read_json()
             user = self.get_session_user()
@@ -661,6 +695,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json(order, HTTPStatus.CREATED)
 
     def create_address(self) -> None:
+        """Uyenin profilindeki teslimat adresini veritabanina ekler."""
         user = self.require_user()
         if not user:
             return
@@ -691,6 +726,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json(row_to_dict(row), HTTPStatus.CREATED)
 
     def create_pet(self) -> None:
+        """Uyenin profilindeki hayvan kaydini veritabanina ekler."""
         user = self.require_user()
         if not user:
             return
@@ -768,6 +804,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json({"message": "Mesajiniz iletildi."}, HTTPStatus.CREATED)
 
     def create_user(self) -> None:
+        """Yeni uye kaydi olusturur; telefon ve sifre kontrollerini yapar."""
         try:
             data = self.read_json()
             full_name = (data.get("full_name") or "").strip()
@@ -808,6 +845,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json(row_to_dict(user), HTTPStatus.CREATED)
 
     def login_user(self, required_role: str) -> None:
+        """Normal uye veya admin girisini kontrol eder ve session token uretir."""
         try:
             data = self.read_json()
             email = validate_email(data.get("email", ""))
@@ -911,6 +949,8 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
 
 
 class FlaskGumusVeterinerAdapter(GumusVeterinerHandler):
+    """Flask request'lerini eski handler metodlarina baglayan kucuk adaptor."""
+
     def __init__(self, path: str) -> None:
         self.path = path
         self.headers = request.headers
@@ -933,6 +973,7 @@ class FlaskGumusVeterinerAdapter(GumusVeterinerHandler):
 
 @app.before_request
 def ensure_database_ready() -> None:
+    # Railway'de container ilk acildiginda data klasoru yoksa otomatik olusturulur.
     if request.path == "/health":
         return
     DB_PATH.parent.mkdir(exist_ok=True)
@@ -941,6 +982,7 @@ def ensure_database_ready() -> None:
 
 @app.after_request
 def add_cors_headers(response: Response) -> Response:
+    # Frontend ayni domain altinda calissa da API testlerinde CORS sorunlarini engeller.
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
@@ -952,16 +994,19 @@ def add_cors_headers(response: Response) -> Response:
 @app.route("/admin/login")
 @app.route("/403")
 def serve_app_index() -> str:
+    # Tum tek sayfa uygulama route'lari ayni index.html dosyasini kullanir.
     return render_template("index.html")
 
 
 @app.route("/health")
 def health() -> tuple[str, int]:
+    # Railway health check bu endpointten hizli cevap alir.
     return "OK", 200
 
 
 @app.route("/api/<path:_path>", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
 def flask_api(_path: str) -> Response:
+    # /api/... istekleri eski handler'in GET/POST/PATCH/DELETE metodlarina yonlendirilir.
     if request.method == "OPTIONS":
         return Response(status=int(HTTPStatus.NO_CONTENT))
     adapter = FlaskGumusVeterinerAdapter(request.full_path.rstrip("?"))
@@ -978,6 +1023,7 @@ def flask_api(_path: str) -> Response:
 
 @app.route("/<path:filename>")
 def serve_project_file(filename: str) -> Response | str:
+    # logo.jpeg, static dosyalar ve admin/login gibi path'ler buradan servis edilir.
     target = ROOT / filename
     if target.is_file():
         return send_from_directory(ROOT, filename)
@@ -994,6 +1040,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Local calistirma ve Railway icin port ayari. Canli ortamda debug kapali.
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
 
