@@ -21,22 +21,28 @@ import os
 import re
 import secrets
 import sqlite3
+from functools import wraps
 from datetime import date, datetime, timedelta
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import jwt
 from flask import Flask, Response, render_template, request, send_from_directory
+from flask_cors import CORS
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "gumus_veteriner.db"
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 5000))
+JWT_SECRET = os.environ.get("JWT_SECRET", "gumus-veteriner-change-this-secret")
 
 # Railway ve Gunicorn bu degiskeni arar: `gunicorn app:app`.
 app = Flask(__name__, static_folder=None)
+CORS(app)
 
 
 def connect() -> sqlite3.Connection:
@@ -164,9 +170,25 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(appointment_id) REFERENCES appointments(id)
             );
+
+            CREATE TABLE IF NOT EXISTS admins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS services (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                price REAL NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
             """
         )
         seed_admin(db)
+        seed_api_admin(db)
         ensure_column(db, "users", "is_banned", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(db, "orders", "user_id", "INTEGER")
         ensure_column(db, "orders", "payment_last4", "TEXT")
@@ -237,6 +259,18 @@ def seed_admin(db: sqlite3.Connection) -> None:
     )
 
 
+def seed_api_admin(db: sqlite3.Connection) -> None:
+    """Mobil/masaustu admin uygulamasi icin ilk JWT admin hesabini olusturur."""
+    default_hash = generate_password_hash("Admin123*")
+    if db.execute("SELECT 1 FROM admins WHERE username = ?", ("admin",)).fetchone():
+        db.execute("UPDATE admins SET password_hash = ? WHERE username = ?", (default_hash, "admin"))
+        return
+    db.execute(
+        "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
+        ("admin", default_hash),
+    )
+
+
 def validate_appointment(data: dict) -> dict:
     """Randevu formundan gelen zorunlu alanlari ve tarih araligini kontrol eder."""
     required = ["first_name", "last_name", "phone", "pet_type", "service", "appt_date", "appt_time"]
@@ -255,6 +289,48 @@ def validate_appointment(data: dict) -> dict:
     if selected > date.today() + timedelta(days=60):
         raise ValueError("En fazla 60 gun ileriye randevu alinabilir")
     return data
+
+
+def api_response(success: bool, message: str, data=None, status: HTTPStatus = HTTPStatus.OK):
+    """Mobil/masaustu uygulamalar icin standart JSON cevap formati."""
+    return {"success": success, "message": message, "data": data}, int(status)
+
+
+def create_admin_jwt(admin_id: int, username: str) -> str:
+    """Admin API icin 7 gun gecerli JWT token uretir."""
+    payload = {
+        "sub": str(admin_id),
+        "username": username,
+        "role": "admin",
+        "exp": datetime.utcnow() + timedelta(days=7),
+        "iat": datetime.utcnow(),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def decode_admin_jwt(token: str) -> dict | None:
+    """Authorization header icindeki JWT token'i cozer."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        return None
+    if payload.get("role") != "admin":
+        return None
+    return payload
+
+
+def require_admin_api(func):
+    """Flask admin API endpointlerini JWT ile koruyan decorator."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        auth = request.headers.get("Authorization", "")
+        token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+        payload = decode_admin_jwt(token)
+        if not payload:
+            body, status = api_response(False, "Admin yetkisi gerekli", None, HTTPStatus.UNAUTHORIZED)
+            return body, status
+        return func(*args, **kwargs)
+    return wrapper
 
 
 class GumusVeterinerHandler(SimpleHTTPRequestHandler):
@@ -403,6 +479,9 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             ).fetchone()
 
     def require_admin(self) -> bool:
+        payload = decode_admin_jwt(self.get_bearer_token())
+        if payload:
+            return True
         user = self.get_session_user()
         if not user or user["role"] != "admin":
             self.send_json({"error": "Admin girisi gerekli"}, HTTPStatus.UNAUTHORIZED)
@@ -989,6 +1068,15 @@ def add_cors_headers(response: Response) -> Response:
     return response
 
 
+@app.errorhandler(Exception)
+def handle_unexpected_error(error):
+    """Canli ortamda traceback gostermeden guvenli API hata cevabi doner."""
+    if request.path.startswith("/api/"):
+        body, status = api_response(False, "Sunucu hatası. Lütfen tekrar deneyin.", None, HTTPStatus.INTERNAL_SERVER_ERROR)
+        return body, status
+    raise error
+
+
 @app.route("/")
 @app.route("/admin")
 @app.route("/admin/login")
@@ -1002,6 +1090,207 @@ def serve_app_index() -> str:
 def health() -> tuple[str, int]:
     # Railway health check bu endpointten hizli cevap alir.
     return "OK", 200
+
+
+@app.route("/api/health")
+def api_health():
+    return api_response(True, "API çalışıyor", {})
+
+
+@app.route("/api/admin/login", methods=["POST"])
+def api_admin_login():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    if not username or not password:
+        return api_response(False, "Kullanıcı adı ve şifre zorunlu", None, HTTPStatus.BAD_REQUEST)
+
+    with connect() as db:
+        admin = db.execute("SELECT * FROM admins WHERE username = ?", (username,)).fetchone()
+        if admin and check_password_hash(admin["password_hash"], password):
+            token = create_admin_jwt(admin["id"], admin["username"])
+            data_payload = {"token": token, "admin": {"id": admin["id"], "username": admin["username"]}}
+            response, status = api_response(True, "Admin girişi başarılı", data_payload)
+            response["token"] = token
+            response["user"] = {"id": admin["id"], "full_name": admin["username"], "email": admin["username"], "role": "admin"}
+            return response, status
+
+        legacy = db.execute("SELECT * FROM users WHERE email = ?", (username.lower(),)).fetchone()
+        if legacy and legacy["role"] == "admin" and not legacy["is_banned"] and verify_password(password, legacy["password_hash"], legacy["password_salt"]):
+            token = create_admin_jwt(legacy["id"], legacy["email"])
+            data_payload = {"token": token, "admin": {"id": legacy["id"], "username": legacy["email"]}}
+            response, status = api_response(True, "Admin girişi başarılı", data_payload)
+            response["token"] = token
+            response["user"] = {"id": legacy["id"], "full_name": legacy["full_name"], "email": legacy["email"], "role": "admin"}
+            return response, status
+
+    return api_response(False, "Kullanıcı adı veya şifre hatalı", None, HTTPStatus.UNAUTHORIZED)
+
+
+@app.route("/api/admin/logout", methods=["POST"])
+@require_admin_api
+def api_admin_logout():
+    return api_response(True, "Çıkış yapıldı", {})
+
+
+@app.route("/api/admin/products", methods=["GET"])
+@require_admin_api
+def api_admin_products():
+    with connect() as db:
+        rows = db.execute("SELECT * FROM products ORDER BY id DESC").fetchall()
+    return api_response(True, "Ürünler listelendi", [row_to_dict(row) for row in rows])
+
+
+@app.route("/api/admin/products/add", methods=["POST"])
+@require_admin_api
+def api_admin_products_add():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    category = (data.get("category") or "Genel").strip()
+    if not name:
+        return api_response(False, "Ürün adı zorunlu", None, HTTPStatus.BAD_REQUEST)
+    try:
+        price = float(data.get("price") or 0)
+        stock = int(data.get("stock") or 0)
+    except (TypeError, ValueError):
+        return api_response(False, "Fiyat ve stok sayısal olmalı", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        cursor = db.execute(
+            "INSERT INTO products (name, category, price, stock, image_url, active) VALUES (?, ?, ?, ?, ?, ?)",
+            (name, category, price, stock, (data.get("image_url") or "").strip(), 1 if data.get("active", 1) else 0),
+        )
+        db.commit()
+        product = row_to_dict(db.execute("SELECT * FROM products WHERE id = ?", (cursor.lastrowid,)).fetchone())
+    return api_response(True, "Ürün eklendi", product, HTTPStatus.CREATED)
+
+
+@app.route("/api/admin/products/update/<int:product_id>", methods=["PUT", "PATCH"])
+@require_admin_api
+def api_admin_products_update(product_id: int):
+    data = request.get_json(silent=True) or {}
+    allowed = {"name", "category", "price", "stock", "image_url", "active"}
+    updates = []
+    params = []
+    for field in allowed:
+        if field in data:
+            updates.append(f"{field} = ?")
+            params.append(data[field])
+    if not updates:
+        return api_response(False, "Güncellenecek alan yok", None, HTTPStatus.BAD_REQUEST)
+    params.append(product_id)
+    with connect() as db:
+        db.execute(f"UPDATE products SET {', '.join(updates)} WHERE id = ?", params)
+        db.commit()
+        product = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+    if not product:
+        return api_response(False, "Ürün bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Ürün güncellendi", row_to_dict(product))
+
+
+@app.route("/api/admin/products/delete/<int:product_id>", methods=["DELETE"])
+@require_admin_api
+def api_admin_products_delete(product_id: int):
+    with connect() as db:
+        cursor = db.execute("DELETE FROM products WHERE id = ?", (product_id,))
+        db.commit()
+    if cursor.rowcount < 1:
+        return api_response(False, "Ürün bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Ürün silindi", {})
+
+
+@app.route("/api/admin/services", methods=["GET"])
+@require_admin_api
+def api_admin_services():
+    with connect() as db:
+        rows = db.execute("SELECT * FROM services ORDER BY id DESC").fetchall()
+    return api_response(True, "Hizmetler listelendi", [row_to_dict(row) for row in rows])
+
+
+@app.route("/api/admin/services/add", methods=["POST"])
+@require_admin_api
+def api_admin_services_add():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return api_response(False, "Hizmet adı zorunlu", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        cursor = db.execute(
+            "INSERT INTO services (name, description, price, active, created_at) VALUES (?, ?, ?, ?, ?)",
+            (name, (data.get("description") or "").strip(), float(data.get("price") or 0), 1 if data.get("active", 1) else 0, datetime.now().isoformat(timespec="seconds")),
+        )
+        db.commit()
+        service = row_to_dict(db.execute("SELECT * FROM services WHERE id = ?", (cursor.lastrowid,)).fetchone())
+    return api_response(True, "Hizmet eklendi", service, HTTPStatus.CREATED)
+
+
+@app.route("/api/admin/services/update/<int:service_id>", methods=["PUT", "PATCH"])
+@require_admin_api
+def api_admin_services_update(service_id: int):
+    data = request.get_json(silent=True) or {}
+    allowed = {"name", "description", "price", "active"}
+    updates = []
+    params = []
+    for field in allowed:
+        if field in data:
+            updates.append(f"{field} = ?")
+            params.append(data[field])
+    if not updates:
+        return api_response(False, "Güncellenecek alan yok", None, HTTPStatus.BAD_REQUEST)
+    params.append(service_id)
+    with connect() as db:
+        db.execute(f"UPDATE services SET {', '.join(updates)} WHERE id = ?", params)
+        db.commit()
+        service = db.execute("SELECT * FROM services WHERE id = ?", (service_id,)).fetchone()
+    if not service:
+        return api_response(False, "Hizmet bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Hizmet güncellendi", row_to_dict(service))
+
+
+@app.route("/api/admin/services/delete/<int:service_id>", methods=["DELETE"])
+@require_admin_api
+def api_admin_services_delete(service_id: int):
+    with connect() as db:
+        cursor = db.execute("DELETE FROM services WHERE id = ?", (service_id,))
+        db.commit()
+    if cursor.rowcount < 1:
+        return api_response(False, "Hizmet bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Hizmet silindi", {})
+
+
+@app.route("/api/admin/appointments", methods=["GET"])
+@require_admin_api
+def api_admin_appointments():
+    with connect() as db:
+        rows = db.execute("SELECT * FROM appointments ORDER BY created_at DESC").fetchall()
+    return api_response(True, "Randevular listelendi", [row_to_dict(row) for row in rows])
+
+
+@app.route("/api/admin/appointments/update/<int:appointment_id>", methods=["PUT", "PATCH"])
+@require_admin_api
+def api_admin_appointments_update(appointment_id: int):
+    data = request.get_json(silent=True) or {}
+    status = data.get("status")
+    if status not in {"pending", "confirmed", "cancelled", "completed"}:
+        return api_response(False, "Geçersiz randevu durumu", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        db.execute("UPDATE appointments SET status = ? WHERE id = ?", (status, appointment_id))
+        db.commit()
+        appointment = db.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
+    if not appointment:
+        return api_response(False, "Randevu bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Randevu güncellendi", row_to_dict(appointment))
+
+
+@app.route("/api/admin/appointments/delete/<int:appointment_id>", methods=["DELETE"])
+@require_admin_api
+def api_admin_appointments_delete(appointment_id: int):
+    with connect() as db:
+        db.execute("DELETE FROM appointment_reminders WHERE appointment_id = ?", (appointment_id,))
+        cursor = db.execute("DELETE FROM appointments WHERE id = ?", (appointment_id,))
+        db.commit()
+    if cursor.rowcount < 1:
+        return api_response(False, "Randevu bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Randevu silindi", {})
 
 
 @app.route("/api/<path:_path>", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
