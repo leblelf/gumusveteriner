@@ -55,13 +55,14 @@ nav{background:rgba(255,255,255,.9);border-bottom:1px solid var(--border);positi
 .nb.on{color:var(--teal);font-weight:500;background:var(--teal-light)}
 .nb.cta{background:var(--teal);color:#fff!important;padding:7px 16px;font-weight:500}
 .nb.cta:hover{background:var(--teal-mid)}
+.mobile-menu-btn{display:none!important}
 .cart-badge{background:var(--amber);color:#fff;font-size:10px;font-weight:600;padding:1px 5px;border-radius:8px;margin-left:3px;display:none}
 
 /* ── WHATSAPP BALONU ──
    Sag altta sabit duran WhatsApp hizli iletisim butonu. */
-.whatsapp-float{position:fixed;right:22px;bottom:22px;z-index:500;width:70px;height:70px;border-radius:24px;background:linear-gradient(135deg,#20c060,#087c43);color:#fff;display:grid;place-items:center;box-shadow:0 18px 36px rgba(8,124,67,.34);cursor:pointer;user-select:none;border:1px solid rgba(255,255,255,.28);transition:.18s transform,.18s box-shadow}
+.whatsapp-float{position:fixed;right:22px;bottom:22px;z-index:250;width:70px;height:70px;border-radius:24px;background:linear-gradient(135deg,#25D366,#087c43);color:#fff;display:grid;place-items:center;box-shadow:0 18px 36px rgba(8,124,67,.34);cursor:pointer;user-select:none;border:1px solid rgba(255,255,255,.28);transition:.18s transform,.18s box-shadow}
 .whatsapp-float:hover{transform:translateY(-2px);box-shadow:0 22px 44px rgba(8,124,67,.42)}
-.whatsapp-float span{font-size:28px;line-height:1}
+.whatsapp-float svg{width:34px;height:34px;display:block;fill:currentColor}
 .whatsapp-float small{position:absolute;right:58px;top:11px;min-width:128px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:14px;padding:7px 10px;font-size:11px;box-shadow:var(--shadow);pointer-events:none}
 
 /* ── PAGES ── */
@@ -326,22 +327,22 @@ body.user-session .guest-order,body.admin-session .guest-order{display:none}
   /* Telefon ekranlari icin mobil uyum kurallari. */
   body{font-size:14px;overflow-x:hidden}
   .cursor-glow,.blob{display:none}
-  nav{height:auto;min-height:62px;align-items:center;overflow:visible;padding:.6rem .8rem;gap:.35rem;scrollbar-width:none}
+  nav{height:64px;min-height:64px;align-items:center;overflow:visible;padding:.6rem .8rem;gap:.35rem;scrollbar-width:none}
   nav::-webkit-scrollbar{display:none}
   .logo{font-size:1rem;min-width:max-content;margin-right:.25rem}
   .logo-badge{width:34px;height:34px}
   .nb{display:none;align-items:center;justify-content:center;font-size:12px;padding:7px 10px;background:color-mix(in srgb,var(--card),transparent 10%);border:1px solid var(--border2)}
   .mobile-menu-btn{display:inline-flex!important}
-  nav.mobile-open{align-items:flex-start;flex-wrap:wrap}
-  nav.mobile-open .nb{display:inline-flex}
-  nav.mobile-open .mobile-menu-btn{background:var(--teal);color:#fff}
-  nav.mobile-open .logo{width:calc(100% - 56px)}
+  nav.mobile-open{position:fixed;left:0;top:0;bottom:0;width:min(84vw,320px);height:100vh;z-index:850;align-items:stretch;align-content:flex-start;flex-direction:column;flex-wrap:nowrap;padding:1rem;box-shadow:22px 0 70px rgba(0,0,0,.22);overflow-y:auto}
+  nav.mobile-open .nb{display:flex;width:100%;justify-content:flex-start;border-radius:12px;padding:12px 14px;background:transparent}
+  nav.mobile-open .mobile-menu-btn{background:var(--teal);color:#fff;justify-content:center}
+  nav.mobile-open .logo{width:100%;margin:0 0 .75rem}
   nav.mobile-open .nav-user{display:none!important}
-  nav.mobile-open:after{content:"";flex-basis:100%;height:0}
-  nav.mobile-open .nb:not(.mobile-menu-btn),nav.mobile-open .theme-toggle{flex:1 1 calc(50% - .35rem);min-width:140px}
+  nav.mobile-open:after{content:"";display:block;position:fixed;left:min(84vw,320px);top:0;right:0;bottom:0;background:rgba(0,0,0,.32);pointer-events:none}
+  nav.mobile-open .nb:not(.mobile-menu-btn),nav.mobile-open .theme-toggle{min-width:0}
   .nb.cta{padding:7px 12px}
   .theme-toggle{display:none;width:34px;height:34px;min-width:34px}
-  nav.mobile-open .theme-toggle{display:inline-grid}
+  nav.mobile-open .theme-toggle{display:grid;width:100%;border-radius:12px;margin-top:.25rem}
   .nav-user{display:none!important}
   .hero{padding:3rem 1rem 2rem}
   .hero h1{font-size:2rem}

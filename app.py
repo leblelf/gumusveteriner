@@ -185,10 +185,29 @@ def init_db() -> None:
                 active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS site_texts (
+                text_key TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS site_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                author TEXT NOT NULL,
+                pet_type TEXT,
+                rating INTEGER NOT NULL DEFAULT 5,
+                message TEXT NOT NULL,
+                reply TEXT,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
             """
         )
         seed_admin(db)
         seed_api_admin(db)
+        seed_site_content(db)
         ensure_column(db, "users", "is_banned", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(db, "orders", "user_id", "INTEGER")
         ensure_column(db, "orders", "payment_last4", "TEXT")
@@ -269,6 +288,43 @@ def seed_api_admin(db: sqlite3.Connection) -> None:
         "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
         ("admin", default_hash),
     )
+
+
+def seed_site_content(db: sqlite3.Connection) -> None:
+    """Admin uygulamasindan yonetilecek site metinleri ve yorumlari icin ilk veriler."""
+    now = datetime.now().isoformat(timespec="seconds")
+    texts = [
+        ("hero_title", "Ana sayfa başlığı", "Dostlarınız İçin\nEn Güvenilir Bakım"),
+        ("hero_subtitle", "Ana sayfa açıklaması", "Toptepe, Kayaaltı Sk. No:10/1, Canik/Samsun adresinde 24 saat açık veteriner hizmeti."),
+        ("about_title", "Hakkımızda başlığı", "Hakkımızda"),
+        ("about_subtitle", "Hakkımızda alt başlığı", "Samsun Gümüş Veteriner Muayenehanesi"),
+        ("services_title", "Hizmetler başlığı", "Hizmetlerimiz"),
+        ("appointment_title", "Randevu başlığı", "Online Randevu"),
+        ("blog_title", "Blog başlığı", "Blog & Bilgilendirme"),
+        ("contact_title", "İletişim başlığı", "İletişim"),
+    ]
+    for key, label, value in texts:
+        db.execute(
+            """
+            INSERT OR IGNORE INTO site_texts (text_key, label, value, updated_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (key, label, value, now),
+        )
+
+    if not db.execute("SELECT 1 FROM site_reviews LIMIT 1").fetchone():
+        rows = [
+            ("Ayşe K.", "Kedi Sahibi", 5, "Miyav'ımın aşı randevusu çok sorunsuz geçti. Ekip gerçekten ilgili ve şefkatli.", "Güzel yorumunuz için teşekkür ederiz."),
+            ("Mehmet T.", "Köpek Sahibi", 5, "Köpeğimiz Max'in ameliyatı için çok endişeliydik. Her adımda bilgi verdiler.", "Max'e sağlıklı günler dileriz."),
+            ("Zeynep A.", "Tavşan Sahibi", 4, "Online randevu sistemi çok kullanışlı. Bekleme süresi kısa, klinik temiz.", ""),
+        ]
+        db.executemany(
+            """
+            INSERT INTO site_reviews (author, pet_type, rating, message, reply, active, created_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+            """,
+            [(author, pet_type, rating, message, reply, now) for author, pet_type, rating, message, reply in rows],
+        )
 
 
 def validate_appointment(data: dict) -> dict:
@@ -1095,6 +1151,108 @@ def health() -> tuple[str, int]:
 @app.route("/api/health")
 def api_health():
     return api_response(True, "API çalışıyor", {})
+
+
+@app.route("/api/site/content", methods=["GET"])
+def api_site_content():
+    with connect() as db:
+        text_rows = db.execute("SELECT text_key, label, value, updated_at FROM site_texts ORDER BY text_key").fetchall()
+        review_rows = db.execute("SELECT * FROM site_reviews WHERE active = 1 ORDER BY id DESC").fetchall()
+    data = {
+        "texts": [row_to_dict(row) for row in text_rows],
+        "reviews": [row_to_dict(row) for row in review_rows],
+    }
+    return api_response(True, "Site içeriği listelendi", data)
+
+
+@app.route("/api/admin/site-texts", methods=["GET"])
+@require_admin_api
+def api_admin_site_texts():
+    with connect() as db:
+        rows = db.execute("SELECT text_key, label, value, updated_at FROM site_texts ORDER BY text_key").fetchall()
+    return api_response(True, "Site yazıları listelendi", [row_to_dict(row) for row in rows])
+
+
+@app.route("/api/admin/site-texts/update/<text_key>", methods=["PATCH", "PUT"])
+@require_admin_api
+def api_admin_site_texts_update(text_key: str):
+    data = request.get_json(silent=True) or {}
+    value = (data.get("value") or "").strip()
+    if not value:
+        return api_response(False, "Metin boş olamaz", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        db.execute(
+            "UPDATE site_texts SET value = ?, updated_at = ? WHERE text_key = ?",
+            (value, datetime.now().isoformat(timespec="seconds"), text_key),
+        )
+        db.commit()
+        row = db.execute("SELECT text_key, label, value, updated_at FROM site_texts WHERE text_key = ?", (text_key,)).fetchone()
+    if not row:
+        return api_response(False, "Site yazısı bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Site yazısı güncellendi", row_to_dict(row))
+
+
+@app.route("/api/admin/reviews", methods=["GET"])
+@require_admin_api
+def api_admin_reviews():
+    with connect() as db:
+        rows = db.execute("SELECT * FROM site_reviews ORDER BY id DESC").fetchall()
+    return api_response(True, "Yorumlar listelendi", [row_to_dict(row) for row in rows])
+
+
+@app.route("/api/admin/reviews/update/<int:review_id>", methods=["PATCH", "PUT"])
+@require_admin_api
+def api_admin_reviews_update(review_id: int):
+    data = request.get_json(silent=True) or {}
+    allowed = {"author", "pet_type", "rating", "message", "reply", "active"}
+    updates = []
+    params = []
+    for field in allowed:
+        if field in data:
+            updates.append(f"{field} = ?")
+            params.append(data[field])
+    if not updates:
+        return api_response(False, "Güncellenecek alan yok", None, HTTPStatus.BAD_REQUEST)
+    params.append(review_id)
+    with connect() as db:
+        db.execute(f"UPDATE site_reviews SET {', '.join(updates)} WHERE id = ?", params)
+        db.commit()
+        row = db.execute("SELECT * FROM site_reviews WHERE id = ?", (review_id,)).fetchone()
+    if not row:
+        return api_response(False, "Yorum bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Yorum güncellendi", row_to_dict(row))
+
+
+@app.route("/api/admin/users", methods=["GET"])
+@require_admin_api
+def api_admin_users():
+    with connect() as db:
+        user_rows = db.execute(
+            """
+            SELECT id, full_name, email, phone, role, is_banned, created_at
+            FROM users
+            ORDER BY created_at DESC
+            """
+        ).fetchall()
+        users = []
+        for row in user_rows:
+            user = row_to_dict(row)
+            user["addresses"] = [
+                row_to_dict(address)
+                for address in db.execute(
+                    "SELECT id, title, address, city, district, created_at FROM user_addresses WHERE user_id = ? ORDER BY id DESC",
+                    (row["id"],),
+                ).fetchall()
+            ]
+            user["pets"] = [
+                row_to_dict(pet)
+                for pet in db.execute(
+                    "SELECT id, name, species, age, notes, created_at FROM pets WHERE user_id = ? ORDER BY id DESC",
+                    (row["id"],),
+                ).fetchall()
+            ]
+            users.append(user)
+    return api_response(True, "Üyeler listelendi", users)
 
 
 @app.route("/api/admin/login", methods=["POST"])

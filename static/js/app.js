@@ -59,6 +59,34 @@ function authHeaders(extra={}){
   return token ? {...extra, Authorization:`Bearer ${token}`} : extra;
 }
 
+async function loadSiteContent(){
+  try{
+    const res=await fetch('/api/site/content');
+    const payload=await res.json();
+    if(!res.ok || payload.success!==true)return;
+    const texts={};
+    (payload.data.texts || []).forEach(item=>texts[item.text_key]=item.value);
+    if(texts.hero_title){
+      document.getElementById('site-hero-title').innerHTML=texts.hero_title.replace(/\n/g,'<br>');
+    }
+    if(texts.hero_subtitle){
+      document.getElementById('site-hero-subtitle').textContent=texts.hero_subtitle;
+    }
+    renderSiteReviews(payload.data.reviews || []);
+  }catch(e){}
+}
+
+function renderSiteReviews(reviews){
+  const wrap=document.getElementById('site-reviews');
+  if(!wrap || !reviews.length)return;
+  wrap.innerHTML=reviews.slice(0,6).map(item=>{
+    const rating=Math.max(0,Math.min(5,Number(item.rating||5)));
+    const stars='★'.repeat(rating)+'☆'.repeat(5-rating);
+    const reply=item.reply ? `<div class="info-box" style="margin-top:.8rem;padding:.75rem;font-size:13px"><strong>Gümüş Veteriner:</strong> ${item.reply}</div>` : '';
+    return `<div class="rc"><div class="stars">${stars}</div><blockquote>"${item.message}"</blockquote>${reply}<cite>${item.author} — ${item.pet_type || 'Hasta Sahibi'}</cite></div>`;
+  }).join('');
+}
+
 let cart = {};  // {id: {product, qty}}
 
 // ── Sepet işlemleri ──────────────────────────────────────────────────────────
@@ -698,6 +726,7 @@ wireAnimalInputs();
 initWhatsAppBubble();
 updateAuthUI();
 loadProducts();
+loadSiteContent();
 if(currentUser){loadProfile().catch(()=>{});}
 if(location.pathname==='/admin/login' || location.pathname==='/admin')go('home');
 if(location.pathname==='/403')go('forbidden');

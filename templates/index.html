@@ -19,14 +19,14 @@
 -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Samsun Gümüş Veteriner Muayenehanesi | Klinik Yönetim Sistemi</title>
-<meta name="description" content="Samsun Gümüş Veteriner Muayenehanesi için online randevu, ürün siparişi ve klinik yönetim sistemi.">
+<title>Gümüş Veteriner | Klinik Yönetim Sistemi</title>
+<meta name="description" content="Gümüş Veteriner için online randevu, ürün siparişi ve klinik yönetim sistemi.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-<div class="loader" id="loader"><div class="loader-card"><img src="/logo.jpeg" alt="Gümüş Veteriner"><strong>Samsun Gümüş Veteriner</strong><small>Yükleniyor...</small></div></div>
+<div class="loader" id="loader"><div class="loader-card"><img src="/logo.jpeg" alt="Gümüş Veteriner"><strong>Gümüş Veteriner</strong><small>Yükleniyor...</small></div></div>
 <div class="cursor-glow" id="cursorGlow"></div>
 <div class="blob one"></div><div class="blob two"></div>
 <div class="toast-wrap" id="toastWrap"></div>
@@ -35,7 +35,7 @@
 <nav>
   <div class="logo" onclick="go('home')">
     <div class="logo-badge"><img src="/logo.jpeg" alt="Gümüş Veteriner logosu"></div>
-    Samsun Gümüş Veteriner
+    Gümüş Veteriner
   </div>
   <button class="nb mobile-menu-btn" type="button" onclick="toggleMobileMenu()">☰ Menü</button>
   <button class="nb" id="nb-home"     onclick="go('home')">Ana Sayfa</button>
@@ -56,7 +56,7 @@
 <!-- WhatsApp hizli iletisim balonu. -->
 <a class="whatsapp-float" id="whatsappFloat" href="https://wa.me/905461361433" target="_blank" rel="noopener" aria-label="WhatsApp hattı">
   <small>24 saat açık<br>WhatsApp hattı</small>
-  <span>☎</span>
+  <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16.02 3.2A12.64 12.64 0 0 0 5.1 22.2L3.4 28.7l6.65-1.72a12.58 12.58 0 0 0 5.96 1.52h.01A12.65 12.65 0 0 0 16.02 3.2Zm0 23.12h-.01a10.45 10.45 0 0 1-5.33-1.46l-.38-.23-3.95 1.02 1.05-3.85-.25-.4a10.43 10.43 0 1 1 8.87 4.92Zm5.72-7.82c-.31-.16-1.86-.92-2.15-1.02-.29-.11-.5-.16-.71.16-.21.31-.82 1.02-1 1.23-.18.21-.37.23-.69.08-.31-.16-1.32-.49-2.52-1.55-.93-.83-1.56-1.86-1.74-2.17-.18-.31-.02-.48.14-.64.14-.14.31-.37.47-.55.16-.18.21-.31.31-.52.1-.21.05-.39-.03-.55-.08-.16-.71-1.72-.97-2.36-.26-.61-.52-.53-.71-.54h-.61c-.21 0-.55.08-.84.39-.29.31-1.1 1.08-1.1 2.62 0 1.55 1.13 3.04 1.29 3.25.16.21 2.23 3.4 5.4 4.77.75.32 1.34.52 1.8.66.76.24 1.45.2 1.99.12.61-.09 1.86-.76 2.12-1.49.26-.73.26-1.36.18-1.49-.08-.13-.29-.21-.6-.37Z"/></svg>
 </a>
 
 <!-- ════════════════ ANA SAYFA ════════════════ -->
@@ -64,8 +64,8 @@
   <div class="hero">
     <div class="hero-orb" style="width:320px;height:320px;top:-120px;right:-100px"></div>
     <div class="hero-orb" style="width:200px;height:200px;bottom:-80px;left:-60px"></div>
-    <h1>Dostlarınız İçin<br>En Güvenilir Bakım</h1>
-    <p>Toptepe, Kayaaltı Sk. No:10/1, Canik/Samsun adresinde 24 saat açık veteriner hizmeti.</p>
+    <h1 id="site-hero-title">Dostlarınız İçin<br>En Güvenilir Bakım</h1>
+    <p id="site-hero-subtitle">Toptepe, Kayaaltı Sk. No:10/1, Canik/Samsun adresinde 24 saat açık veteriner hizmeti.</p>
     <div class="hero-btns">
       <button class="btn-w" onclick="go('appt')">📅 Online Randevu Al</button>
       <button class="btn-ow" onclick="go('shop')">🛒 Ürün Satın Al</button>
@@ -108,7 +108,7 @@
   <div class="sec">
     <div class="sec-title">Müşteri Yorumları</div>
     <div class="sec-sub">Evcil hayvan sahiplerinin deneyimleri</div>
-    <div class="g3">
+    <div class="g3" id="site-reviews">
       <div class="rc"><div class="stars">★★★★★</div><blockquote>"Miyav'ımın aşı randevusu çok sorunsuz geçti. Dr. Yılmaz gerçekten ilgili ve şefkatli bir veteriner."</blockquote><cite>Ayşe K. — Kedi Sahibi</cite></div>
       <div class="rc"><div class="stars">★★★★★</div><blockquote>"Köpeğimiz Max'in ameliyatı için çok endişeliydik. Ekip bize her adımda bilgi verdi, mükemmel sonuç."</blockquote><cite>Mehmet T. — Köpek Sahibi</cite></div>
       <div class="rc"><div class="stars">★★★★☆</div><blockquote>"Online randevu sistemi çok kullanışlı. Bekleme süresi kısa, klinik pırıl pırıl temiz."</blockquote><cite>Zeynep A. — Tavşan Sahibi</cite></div>
