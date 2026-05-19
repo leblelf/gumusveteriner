@@ -298,12 +298,26 @@ def seed_site_content(db: sqlite3.Connection) -> None:
     texts = [
         ("hero_title", "Ana sayfa başlığı", "Dostlarınız İçin\nEn Güvenilir Bakım"),
         ("hero_subtitle", "Ana sayfa açıklaması", "Toptepe, Kayaaltı Sk. No:10/1, Canik/Samsun adresinde 24 saat açık veteriner hizmeti."),
+        ("home_services_title", "Ana sayfa hizmetler başlığı", "Hizmetlerimiz"),
+        ("home_services_subtitle", "Ana sayfa hizmetler açıklaması", "Evcil dostlarınız için kapsamlı veteriner hizmetleri"),
+        ("home_products_title", "Ana sayfa ürünler başlığı", "Öne Çıkan Ürünler"),
+        ("home_products_subtitle", "Ana sayfa ürünler açıklaması", "Evcil hayvanınız için seçilmiş ürünler"),
+        ("home_reviews_title", "Ana sayfa yorumlar başlığı", "Müşteri Yorumları"),
+        ("home_reviews_subtitle", "Ana sayfa yorumlar açıklaması", "Evcil hayvan sahiplerinin deneyimleri"),
         ("about_title", "Hakkımızda başlığı", "Hakkımızda"),
         ("about_subtitle", "Hakkımızda alt başlığı", "Samsun Gümüş Veteriner Muayenehanesi"),
+        ("about_intro", "Hakkımızda bilgi kutusu", "Samsun'da evcil dostlarınız için muayene, koruyucu sağlık, randevu ve pet ürünleri süreçlerini tek ekranda yöneten modern klinik deneyimi."),
         ("services_title", "Hizmetler başlığı", "Hizmetlerimiz"),
+        ("services_subtitle", "Hizmetler açıklaması", "Evcil hayvanlarınız için kapsamlı veteriner hizmetleri"),
         ("appointment_title", "Randevu başlığı", "Online Randevu"),
+        ("appointment_subtitle", "Randevu açıklaması", "Kolayca randevu alın, SMS ile onaylayalım"),
+        ("appointment_info", "Randevu bilgi kutusu", "Randevunuz en geç 2 saat içinde SMS ile onaylanır. İptal için 24 saat önce haber vermeniz yeterli."),
         ("blog_title", "Blog başlığı", "Blog & Bilgilendirme"),
+        ("blog_subtitle", "Blog açıklaması", "Evcil hayvan sağlığı hakkında uzman bilgileri"),
         ("contact_title", "İletişim başlığı", "İletişim"),
+        ("contact_subtitle", "İletişim açıklaması", "Her türlü soru için buradayız"),
+        ("footer_title", "Footer klinik adı", "Samsun Gümüş Veteriner Muayenehanesi"),
+        ("footer_rights", "Footer hak metni", "© 2026 Samsun Gümüş Veteriner Muayenehanesi. Tüm hakları saklıdır."),
     ]
     for key, label, value in texts:
         db.execute(

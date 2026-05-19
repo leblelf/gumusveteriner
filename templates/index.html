@@ -30,6 +30,7 @@
 <div class="cursor-glow" id="cursorGlow"></div>
 <div class="blob one"></div><div class="blob two"></div>
 <div class="toast-wrap" id="toastWrap"></div>
+<div class="mobile-menu-scrim" id="mobileMenuScrim" onclick="closeMobileMenu()"></div>
 
 <!-- UST NAV: masaustunde butonlar yan yana, mobilde "Menu" butonu ile acilir. -->
 <nav>
@@ -79,8 +80,8 @@
   </div>
 
   <div class="sec">
-    <div class="sec-title">Hizmetlerimiz</div>
-    <div class="sec-sub">Evcil dostlarınız için kapsamlı veteriner hizmetleri</div>
+    <div class="sec-title" id="site-home-services-title">Hizmetlerimiz</div>
+    <div class="sec-sub" id="site-home-services-subtitle">Evcil dostlarınız için kapsamlı veteriner hizmetleri</div>
     <div class="g3">
       <div class="card"><div class="icon-box">💉</div><h3>Aşılama</h3><p>Yıllık aşı takvimi ve koruyucu sağlık programları.</p></div>
       <div class="card"><div class="icon-box">🔬</div><h3>Teşhis & Lab</h3><p>Kan, idrar ve dışkı analizi. Klinik içi hızlı sonuç.</p></div>
@@ -92,8 +93,8 @@
   </div>
 
   <div class="sec" style="background:var(--card);border-top:1px solid var(--border2);border-bottom:1px solid var(--border2)">
-    <div class="sec-title">Öne Çıkan Ürünler</div>
-    <div class="sec-sub">Evcil hayvanınız için seçilmiş ürünler</div>
+    <div class="sec-title" id="site-home-products-title">Öne Çıkan Ürünler</div>
+    <div class="sec-sub" id="site-home-products-subtitle">Evcil hayvanınız için seçilmiş ürünler</div>
     <div class="g4" id="home-products">
       <div class="pc"><div class="pc-img">🐶</div><div class="pc-body"><div class="pc-cat">Mama</div><h3>Royal Canin Köpek Maması 15kg</h3><p>Yetişkin köpekler için denge besin maması.</p><div class="pc-footer"><span class="pc-price">₺1.250</span><button class="btn-add" onclick="addCart(1,'Royal Canin Köpek Maması 15kg',1250,'🐶')">+ Ekle</button></div></div></div>
       <div class="pc"><div class="pc-img">🐱</div><div class="pc-body"><div class="pc-cat">Mama</div><h3>Whiskas Kedi Maması 10kg</h3><p>Tüm kedi ırkları için özel formül.</p><div class="pc-footer"><span class="pc-price">₺890</span><button class="btn-add" onclick="addCart(2,'Whiskas Kedi Maması 10kg',890,'🐱')">+ Ekle</button></div></div></div>
@@ -106,8 +107,8 @@
   </div>
 
   <div class="sec">
-    <div class="sec-title">Müşteri Yorumları</div>
-    <div class="sec-sub">Evcil hayvan sahiplerinin deneyimleri</div>
+    <div class="sec-title" id="site-home-reviews-title">Müşteri Yorumları</div>
+    <div class="sec-sub" id="site-home-reviews-subtitle">Evcil hayvan sahiplerinin deneyimleri</div>
     <div class="g3" id="site-reviews">
       <div class="rc"><div class="stars">★★★★★</div><blockquote>"Miyav'ımın aşı randevusu çok sorunsuz geçti. Dr. Yılmaz gerçekten ilgili ve şefkatli bir veteriner."</blockquote><cite>Ayşe K. — Kedi Sahibi</cite></div>
       <div class="rc"><div class="stars">★★★★★</div><blockquote>"Köpeğimiz Max'in ameliyatı için çok endişeliydik. Ekip bize her adımda bilgi verdi, mükemmel sonuç."</blockquote><cite>Mehmet T. — Köpek Sahibi</cite></div>
@@ -118,9 +119,9 @@
 
 <!-- ════════════════ HAKKIMIZDA ════════════════ -->
 <div class="page" id="page-about">
-  <div class="page-top"><h2>Hakkımızda</h2><p>Samsun Gümüş Veteriner Muayenehanesi</p></div>
+  <div class="page-top"><h2 id="site-about-title">Hakkımızda</h2><p id="site-about-subtitle">Samsun Gümüş Veteriner Muayenehanesi</p></div>
   <div class="sec">
-    <div class="info-box">Samsun'da evcil dostlarınız için muayene, koruyucu sağlık, randevu ve pet ürünleri süreçlerini tek ekranda yöneten modern klinik deneyimi.</div>
+    <div class="info-box" id="site-about-intro">Samsun'da evcil dostlarınız için muayene, koruyucu sağlık, randevu ve pet ürünleri süreçlerini tek ekranda yöneten modern klinik deneyimi.</div>
     <div class="sec-title">Ekibimiz</div><div class="sec-sub">Uzman ve sertifikalı veteriner hekimlerimiz</div>
     <div class="g3">
       <div class="team-c"><div class="av av1">AY</div><h3 style="font-size:14px;font-weight:500">Dr. Ahmet Yılmaz</h3><p style="font-size:12px;color:var(--muted)">Genel Veteriner Hekimi</p><span class="badge">Kurucu</span></div>
@@ -139,7 +140,7 @@
 
 <!-- ════════════════ HİZMETLER ════════════════ -->
 <div class="page" id="page-services">
-  <div class="page-top"><h2>Hizmetlerimiz</h2><p>Evcil hayvanlarınız için kapsamlı veteriner hizmetleri</p></div>
+  <div class="page-top"><h2 id="site-services-title">Hizmetlerimiz</h2><p id="site-services-subtitle">Evcil hayvanlarınız için kapsamlı veteriner hizmetleri</p></div>
   <div class="sec">
     <div class="g2">
       <div class="card" style="padding:1.5rem"><div class="icon-box" style="width:52px;height:52px;font-size:24px">💉</div><h3 style="font-size:15px;margin-bottom:.5rem">Koruyucu Sağlık & Aşılama</h3><p>Yıllık aşı takvimi, iç-dış parazit tedavisi, rutin kontroller.</p><div style="margin-top:.75rem"><span class="tag">Köpek</span><span class="tag">Kedi</span><span class="tag">Tavşan</span></div></div>
@@ -168,9 +169,9 @@
 
 <!-- ════════════════ RANDEVU ════════════════ -->
 <div class="page" id="page-appt">
-  <div class="page-top"><h2>Online Randevu</h2><p>Kolayca randevu alın, SMS ile onaylayalım</p></div>
+  <div class="page-top"><h2 id="site-appointment-title">Online Randevu</h2><p id="site-appointment-subtitle">Kolayca randevu alın, SMS ile onaylayalım</p></div>
   <div class="sec">
-    <div class="info-box">Randevunuz en geç 2 saat içinde SMS ile onaylanır. İptal için 24 saat önce haber vermeniz yeterli.</div>
+    <div class="info-box" id="site-appointment-info">Randevunuz en geç 2 saat içinde SMS ile onaylanır. İptal için 24 saat önce haber vermeniz yeterli.</div>
     <form id="apptForm" style="max-width:560px" onsubmit="return false">
       <div class="frow">
         <div><label>Ad *</label><input type="text" id="fn" placeholder="Adınız"></div>
@@ -205,7 +206,7 @@
 
 <!-- ════════════════ BLOG ════════════════ -->
 <div class="page" id="page-blog">
-  <div class="page-top"><h2>Blog & Bilgilendirme</h2><p>Evcil hayvan sağlığı hakkında uzman bilgileri</p></div>
+  <div class="page-top"><h2 id="site-blog-title">Blog & Bilgilendirme</h2><p id="site-blog-subtitle">Evcil hayvan sağlığı hakkında uzman bilgileri</p></div>
   <div class="sec">
     <div class="g3">
       <div class="bc"><div class="bc-img" style="background:#E1F5EE">🐶</div><div class="bc-body"><div class="bc-tag">Köpek Sağlığı</div><h3>Yıllık Aşı Takvimi Neden Önemli?</h3><small>Dr. Ahmet Yılmaz • 5 dk okuma</small></div></div>
@@ -220,7 +221,7 @@
 
 <!-- ════════════════ İLETİŞİM ════════════════ -->
 <div class="page" id="page-contact">
-  <div class="page-top"><h2>İletişim</h2><p>Her türlü soru için buradayız</p></div>
+  <div class="page-top"><h2 id="site-contact-title">İletişim</h2><p id="site-contact-subtitle">Her türlü soru için buradayız</p></div>
   <div class="sec">
     <div class="g2">
       <div>
@@ -482,7 +483,7 @@
 <!-- FOOTER: klinik iletisim bilgileri ve sosyal medya. -->
 <footer class="site-footer">
   <div>
-    <strong>Samsun Gümüş Veteriner Muayenehanesi</strong><br>
+    <strong id="site-footer-title">Samsun Gümüş Veteriner Muayenehanesi</strong><br>
     Toptepe, Kayaaltı Sk. No:10/1, 55000 Canik / Samsun
   </div>
   <div>
@@ -490,7 +491,7 @@
     Instagram: <a href="https://www.instagram.com/gumusvetsamsun/" target="_blank" rel="noopener">@gumusvetsamsun</a>
   </div>
   <div>
-    © 2026 Samsun Gümüş Veteriner Muayenehanesi. Tüm hakları saklıdır.
+    <span id="site-footer-rights">© 2026 Samsun Gümüş Veteriner Muayenehanesi. Tüm hakları saklıdır.</span>
   </div>
 </footer>
 

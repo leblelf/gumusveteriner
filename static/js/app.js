@@ -48,11 +48,14 @@ function toggleTheme(){
 }
 function toggleMobileMenu(){
   // Telefonda ust menuyu acar/kapatir.
-  document.querySelector('nav')?.classList.toggle('mobile-open');
+  const nav=document.querySelector('nav');
+  nav?.classList.toggle('mobile-open');
+  document.getElementById('mobileMenuScrim')?.classList.toggle('open', nav?.classList.contains('mobile-open'));
 }
 function closeMobileMenu(){
   // Bir sayfaya tiklandiginda mobil menuyu kapatir.
   document.querySelector('nav')?.classList.remove('mobile-open');
+  document.getElementById('mobileMenuScrim')?.classList.remove('open');
 }
 function authHeaders(extra={}){
   const token=userToken || adminToken;
@@ -72,6 +75,34 @@ async function loadSiteContent(){
     if(texts.hero_subtitle){
       document.getElementById('site-hero-subtitle').textContent=texts.hero_subtitle;
     }
+    const bindings={
+      home_services_title:'site-home-services-title',
+      home_services_subtitle:'site-home-services-subtitle',
+      home_products_title:'site-home-products-title',
+      home_products_subtitle:'site-home-products-subtitle',
+      home_reviews_title:'site-home-reviews-title',
+      home_reviews_subtitle:'site-home-reviews-subtitle',
+      about_title:'site-about-title',
+      about_subtitle:'site-about-subtitle',
+      about_intro:'site-about-intro',
+      services_title:'site-services-title',
+      services_subtitle:'site-services-subtitle',
+      appointment_title:'site-appointment-title',
+      appointment_subtitle:'site-appointment-subtitle',
+      appointment_info:'site-appointment-info',
+      blog_title:'site-blog-title',
+      blog_subtitle:'site-blog-subtitle',
+      contact_title:'site-contact-title',
+      contact_subtitle:'site-contact-subtitle',
+      footer_title:'site-footer-title',
+      footer_rights:'site-footer-rights'
+    };
+    Object.entries(bindings).forEach(([key,id])=>{
+      if(texts[key]){
+        const el=document.getElementById(id);
+        if(el)el.textContent=texts[key];
+      }
+    });
     renderSiteReviews(payload.data.reviews || []);
   }catch(e){}
 }
