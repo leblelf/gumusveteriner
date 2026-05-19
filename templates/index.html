@@ -6,8 +6,8 @@
 
   Bu dosya tek sayfa uygulama gibi calisir:
   - Ustte CSS stilleri vardir.
-  - Ortada tum sayfa bolumleri vardir: Ana sayfa, urunler, randevu, giris, profil, admin, siparis.
-  - En altta JavaScript vardir: sayfa gecisleri, API istekleri, sepet, login, profil, admin islemleri.
+  - Ortada tum sayfa bolumleri vardir: Ana sayfa, urunler, randevu, giris, profil, siparis.
+  - En altta JavaScript vardir: sayfa gecisleri, API istekleri, sepet, login ve profil islemleri.
 
   VS Code'da arama yapmak icin ipuclari:
   - "page-home"    : Ana sayfa
@@ -15,7 +15,6 @@
   - "page-profile" : Profil, adres ve hayvan kayitlari
   - "page-order"   : Teslimat bilgileri
   - "page-payment" : Odeme ekrani
-  - "page-admin"   : Yonetim paneli
   - "function go"  : Sayfalar arasi gecis sistemi
 -->
 <meta charset="UTF-8">
@@ -47,8 +46,6 @@
   <button class="nb" id="nb-contact"  onclick="go('contact')">İletişim</button>
   <button class="nb" id="nb-auth" onclick="go('auth')">Giriş Yap</button>
   <button class="nb profile-only" id="nb-profile" onclick="go('profile')">Profil</button>
-  <button class="nb admin-only" id="nb-admin" onclick="go('admin')">Yönetim</button>
-  <button class="nb" id="nb-admin-login" onclick="go('adminLogin')">Admin Girişi</button>
   <span class="nav-user" id="nav-user"></span>
   <button class="nb" id="logoutBtn" style="display:none" onclick="logout()">Çıkış</button>
   <button class="theme-toggle" type="button" onclick="toggleTheme()" title="Tema değiştir">◐</button>
@@ -375,92 +372,11 @@
   </div>
 </div>
 
-<!-- ════════════════ ADMIN GİRİŞ ════════════════ -->
-<div class="page" id="page-admin-login">
-  <div class="page-top"><h2>Admin Girişi</h2><p>Yönetim paneli sadece admin hesabıyla açılır</p></div>
-  <div class="sec">
-    <div class="auth-wrap">
-      <div class="auth-bg"><span>🐾</span><span>🦴</span><span>🐟</span><span>⚕️</span><span>💉</span><span>🩺</span><span>🐾</span><span>🐟</span></div>
-      <div class="auth-content">
-        <div class="animal-stage">
-          <div class="animal-face panda" id="adminAnimalFace">
-            <span class="pet-ear left"></span><span class="pet-ear right"></span>
-            <div class="pet-face-core">
-              <div class="pet-eye left"><span class="pet-pupil"></span></div>
-              <div class="pet-eye right"><span class="pet-pupil"></span></div>
-              <span class="pet-mask"></span><span class="pet-nose"></span><span class="pet-mouth"></span>
-            </div>
-            <span class="pet-tail"></span>
-          </div>
-          <div class="sec-sub" style="margin:0">Admin şifresi yazılırken hayvan gözlerini kapatır.</div>
-        </div>
-        <form id="adminLoginForm" onsubmit="return false">
-          <label>Admin E-posta</label>
-          <input type="email" id="aemail" placeholder="admin@gumusveteriner.com" data-watch-input>
-          <label>Admin Şifre</label>
-          <input type="password" id="apass" placeholder="Admin şifresi" data-password-input>
-          <button class="btn-submit" id="adminLoginBtn" type="button" onclick="submitAdminLogin()">Admin Girişi</button>
-          <div class="msg-ok" id="adminLoginOk"></div>
-          <div class="msg-err" id="adminLoginErr"></div>
-        </form>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════ YÖNETİM ════════════════ -->
-<div class="page" id="page-admin">
-  <div class="page-top"><h2>Yönetim</h2><p>Randevu, sipariş ve stok durumunu tek ekrandan takip edin</p></div>
-  <div class="sec">
-    <div class="admin-shell">
-      <aside class="admin-sidebar" id="adminSidebar">
-        <button class="mini-btn" style="width:100%;margin-bottom:.75rem" onclick="toggleAdminSidebar()">☰</button>
-        <button class="side-btn on" data-admin-tab="overview" onclick="showAdminTab('overview',this)">📊 <span class="side-text">Dashboard</span></button>
-        <button class="side-btn" data-admin-tab="users" onclick="showAdminTab('users',this)">👥 <span class="side-text">Kullanıcılar</span></button>
-        <button class="side-btn" data-admin-tab="activity" onclick="showAdminTab('activity',this)">🕘 <span class="side-text">Aktiviteler</span></button>
-      </aside>
-      <div>
-        <section class="admin-section on" data-admin-section="overview">
-          <div class="admin-grid" id="admin-stats"></div>
-          <div class="chart-card">
-            <div class="sec-title" style="font-size:1.3rem">Kayıt İstatistikleri</div>
-            <div class="mini-bars" id="admin-chart"><span style="height:35%"></span><span style="height:52%"></span><span style="height:44%"></span><span style="height:78%"></span><span style="height:62%"></span></div>
-          </div>
-          <div class="g2">
-            <div>
-              <div class="sec-title">Randevular</div>
-              <div class="sec-sub">Yeni randevuları onaylayın, tamamlayın veya iptal edin</div>
-              <div class="admin-list" id="admin-appointments"><div class="skeleton"></div></div>
-            </div>
-            <div>
-              <div class="sec-title">Siparişler</div>
-              <div class="sec-sub">Son siparişleri ve toplam tutarları görün</div>
-              <div class="admin-list" id="admin-orders"><div class="skeleton"></div></div>
-            </div>
-          </div>
-        </section>
-        <section class="admin-section" data-admin-section="users">
-          <div class="sec-title">Kullanıcı Yönetimi</div>
-          <div class="user-toolbar">
-            <input id="userSearch" placeholder="Kullanıcı ara..." oninput="loadAdminUsers()">
-            <select id="roleFilter" onchange="loadAdminUsers()"><option value="">Tüm roller</option><option value="member">Üye</option><option value="admin">Admin</option></select>
-          </div>
-          <div class="admin-list" id="admin-users"><div class="skeleton"></div></div>
-        </section>
-        <section class="admin-section" data-admin-section="activity">
-          <div class="sec-title">Son Aktiviteler</div>
-          <div class="admin-list" id="admin-activity"></div>
-        </section>
-      </div>
-    </div>
-  </div>
-</div>
-
 <div class="page" id="page-403">
   <div class="forbidden">
     <h2>403</h2>
     <p>Bu alan yalnızca yetkili yöneticiler içindir.</p>
-    <button class="btn-submit" onclick="go('adminLogin')">Admin Girişine Git</button>
+    <button class="btn-submit" onclick="go('home')">Ana Sayfaya Dön</button>
   </div>
 </div>
 
@@ -581,4 +497,3 @@
 <script src="/static/js/app.js"></script>
 </body>
 </html>
-

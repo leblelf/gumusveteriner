@@ -347,23 +347,19 @@ function showMsg(okId,errId,type,text){
 }
 
 function updateAuthUI(){
-  document.body.classList.toggle('admin-session', !!adminToken);
-  document.body.classList.toggle('user-session', !!userToken || !!adminToken);
+  document.body.classList.toggle('admin-session', false);
+  document.body.classList.toggle('user-session', !!userToken);
   const label=document.getElementById('nav-user');
   const logoutBtn=document.getElementById('logoutBtn');
-  const adminLogin=document.getElementById('nb-admin-login');
   if(adminToken){
     label.textContent='Admin';
     logoutBtn.style.display='inline-flex';
-    adminLogin.style.display='none';
   }else if(currentUser){
     label.textContent=currentUser.full_name || currentUser.email;
     logoutBtn.style.display='inline-flex';
-    adminLogin.style.display='inline-flex';
   }else{
     label.textContent='';
     logoutBtn.style.display='none';
-    adminLogin.style.display='inline-flex';
   }
 }
 function setAnimal(kind,button){
@@ -679,181 +675,12 @@ async function submitRegister(){
   }
 }
 
-async function submitAdminLogin(){
-  const email=document.getElementById('aemail').value.trim();
-  const password=document.getElementById('apass').value;
-  if(!email.includes('@')){showMsg('adminLoginOk','adminLoginErr','err','Geçerli admin e-postası girin.');return;}
-  if(!password){showMsg('adminLoginOk','adminLoginErr','err','Admin şifresi zorunlu.');return;}
-  const btn=document.getElementById('adminLoginBtn');
-  btn.textContent='Kontrol ediliyor...';btn.disabled=true;
-  try{
-    const res=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
-    const data=await res.json();
-    if(!res.ok){throw new Error(data.error || 'Admin girişi yapılamadı.');}
-    adminToken=data.token;
-    localStorage.setItem('gvAdminToken',adminToken);
-    showMsg('adminLoginOk','adminLoginErr','ok','✅ Admin girişi yapıldı.');
-    reactPet('happy');
-    updateAuthUI();
-    document.getElementById('adminLoginForm').reset();
-    go('admin');
-  }catch(e){
-    reactPet('sad');
-    showMsg('adminLoginOk','adminLoginErr','err',e.message || 'Admin girişi yapılamadı.');
-    if((e.message||'').includes('yalnızca') || (e.message||'').includes('yoneticiler')){go('forbidden');}
-  }finally{
-    btn.textContent='Admin Girişi';btn.disabled=false;
-  }
-}
-
-async function logout(){
-  const token=adminToken || userToken;
-  if(token){await fetch('/api/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`}}).catch(()=>{});}
-  userToken=''; adminToken=''; currentUser=null;
-  PROFILE={addresses:[], pets:[]};
-  localStorage.removeItem('gvUserToken');
-  localStorage.removeItem('gvAdminToken');
-  localStorage.removeItem('gvUser');
-  updateAuthUI();
-  go('home');
-}
-
-// ── Yönetim ekranı ────────────────────────────────────────────────────────────
-const statusLabels={pending:'Bekliyor',confirmed:'Onaylandı',cancelled:'İptal',completed:'Tamamlandı'};
-function formatDateTime(value){
-  if(!value)return '';
-  return new Date(value).toLocaleString('tr-TR',{dateStyle:'short',timeStyle:'short'});
-}
-function renderStats(stats){
-  document.getElementById('admin-stats').innerHTML=[
-    ['total_appointments','Toplam Randevu'],
-    ['pending_appointments','Bekleyen Randevu'],
-    ['total_orders','Toplam Sipariş'],
-    ['total_users','Toplam Üye'],
-    ['total_products','Aktif Ürün'],
-    ['low_stock_products','Düşük Stok']
-  ].map(([key,label])=>`<div class="metric"><strong>${Number(stats[key]||0).toLocaleString('tr-TR')}</strong><span>${label}</span></div>`).join('')+
-    `<div class="metric"><strong>₺${Number(stats.total_revenue||0).toLocaleString('tr-TR')}</strong><span>Toplam Ciro</span></div>`;
-  document.getElementById('admin-activity').innerHTML=[
-    `Toplam kullanıcı: ${Number(stats.total_users||0).toLocaleString('tr-TR')}`,
-    `Aktif oturum: ${Number(stats.active_users||0).toLocaleString('tr-TR')}`,
-    `Banlı kullanıcı: ${Number(stats.banned_users||0).toLocaleString('tr-TR')}`,
-    `Bekleyen randevu: ${Number(stats.pending_appointments||0).toLocaleString('tr-TR')}`
-  ].map(text=>`<div class="admin-row"><p>${text}</p></div>`).join('');
-}
-function renderAppointments(rows){
-  const wrap=document.getElementById('admin-appointments');
-  if(!rows.length){wrap.innerHTML='<div class="info-box">Henüz randevu yok.</div>';return;}
-  wrap.innerHTML=rows.slice(0,12).map(a=>`
-    <div class="admin-row">
-      <div>
-        <h3>#${a.id} ${a.first_name} ${a.last_name} — ${a.pet_name || a.pet_type}</h3>
-        <p>${a.service} • ${a.appt_date} ${a.appt_time}<br>${a.phone} ${a.email ? '• '+a.email : ''}</p>
-        <span class="status ${a.status}">${statusLabels[a.status] || a.status}</span>
-      </div>
-      <div class="admin-actions">
-        <button class="mini-btn" onclick="setAppointmentStatus(${a.id},'confirmed')">Onayla</button>
-        <button class="mini-btn" onclick="setAppointmentStatus(${a.id},'completed')">Tamamla</button>
-        <button class="mini-btn" onclick="setAppointmentStatus(${a.id},'cancelled')">İptal</button>
-      </div>
-    </div>`).join('');
-}
-function renderOrders(rows){
-  const wrap=document.getElementById('admin-orders');
-  if(!rows.length){wrap.innerHTML='<div class="info-box">Henüz sipariş yok.</div>';return;}
-  wrap.innerHTML=rows.slice(0,12).map(o=>`
-    <div class="admin-row">
-      <div>
-        <h3>#${o.id} ${o.first_name} ${o.last_name}</h3>
-        <p>${o.phone} • ${formatDateTime(o.created_at)}<br>${o.address}</p>
-        <span class="status ${o.status}">${statusLabels[o.status] || o.status}</span>
-      </div>
-      <strong style="color:var(--teal)">₺${Number(o.total||0).toLocaleString('tr-TR')}</strong>
-    </div>`).join('');
-}
-async function loadAdmin(){
-  // Admin dashboard icin istatistik, randevu ve siparis verilerini yukler.
-  if(!adminToken){
-    go('adminLogin');
-    return;
-  }
-  try{
-    const [statsRes,apptRes,orderRes]=await Promise.all([
-      fetch('/api/stats',{headers:{Authorization:`Bearer ${adminToken}`}}),
-      fetch('/api/appointments',{headers:{Authorization:`Bearer ${adminToken}`}}),
-      fetch('/api/orders',{headers:{Authorization:`Bearer ${adminToken}`}})
-    ]);
-    const [stats,appointments,orders]=await Promise.all([statsRes.json(),apptRes.json(),orderRes.json()]);
-    if(!statsRes.ok||!apptRes.ok||!orderRes.ok){throw new Error('Yönetim verileri yüklenemedi.');}
-    renderStats(stats);
-    renderAppointments(appointments);
-    renderOrders(orders);
-    loadAdminUsers();
-  }catch(e){
-    document.getElementById('admin-appointments').innerHTML=`<div class="info-box">${e.message || 'Yönetim verileri yüklenemedi.'}</div>`;
-  }
-}
-function showAdminTab(name,btn){
-  document.querySelectorAll('[data-admin-section]').forEach(el=>el.classList.toggle('on',el.dataset.adminSection===name));
-  document.querySelectorAll('[data-admin-tab]').forEach(el=>el.classList.remove('on'));
-  btn.classList.add('on');
-  if(name==='users')loadAdminUsers();
-}
-function toggleAdminSidebar(){document.getElementById('adminSidebar').classList.toggle('collapsed');}
-async function loadAdminUsers(){
-  if(!adminToken)return;
-  const q=encodeURIComponent(document.getElementById('userSearch')?.value || '');
-  const role=encodeURIComponent(document.getElementById('roleFilter')?.value || '');
-  const wrap=document.getElementById('admin-users');
-  try{
-    const res=await fetch(`/api/admin/users?q=${q}&role=${role}`,{headers:{Authorization:`Bearer ${adminToken}`}});
-    const users=await res.json();
-    if(!res.ok)throw new Error(users.error || 'Kullanıcılar yüklenemedi.');
-    if(!users.length){wrap.innerHTML='<div class="info-box">Kullanıcı bulunamadı.</div>';return;}
-    wrap.innerHTML=users.map(u=>`
-      <div class="admin-row">
-        <div>
-          <h3>${u.full_name} ${u.is_banned?'• Banlı':''}</h3>
-          <p>${u.email}${u.phone?' • '+u.phone:''}<br>Rol: ${u.role} • ${formatDateTime(u.created_at)}</p>
-        </div>
-        <div class="admin-actions">
-          <button class="mini-btn" onclick="updateUser(${u.id},{role:'${u.role==='admin'?'member':'admin'}'})">${u.role==='admin'?'Üye yap':'Admin yap'}</button>
-          <button class="mini-btn" onclick="updateUser(${u.id},{is_banned:${u.is_banned?0:1}})">${u.is_banned?'Ban kaldır':'Banla'}</button>
-          <button class="mini-btn" onclick="deleteUser(${u.id})">Sil</button>
-        </div>
-      </div>`).join('');
-  }catch(e){wrap.innerHTML=`<div class="info-box">${e.message}</div>`;}
-}
-async function updateUser(id,payload){
-  const res=await fetch(`/api/admin/users/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:`Bearer ${adminToken}`},body:JSON.stringify(payload)});
-  const data=await res.json();
-  if(!res.ok){toast(data.error || 'Güncellenemedi','err');return;}
-  toast('Kullanıcı güncellendi');loadAdminUsers();loadAdmin();
-}
-async function deleteUser(id){
-  if(!confirm('Kullanıcı silinsin mi?'))return;
-  const res=await fetch(`/api/admin/users/${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${adminToken}`}});
-  const data=await res.json();
-  if(!res.ok){toast(data.error || 'Silinemedi','err');return;}
-  toast('Kullanıcı silindi');loadAdminUsers();loadAdmin();
-}
-async function setAppointmentStatus(id,status){
-  try{
-    const res=await fetch(`/api/appointments/${id}/status?status=${status}`,{method:'PATCH',headers:{Authorization:`Bearer ${adminToken}`}});
-    const data=await res.json();
-    if(!res.ok){throw new Error(data.error || 'Randevu güncellenemedi.');}
-    loadAdmin();
-  }catch(e){
-    alert(e.message || 'Randevu güncellenemedi.');
-  }
-}
-
-// ── Sayfa navigasyon ──────────────────────────────────────────────────────────
-const pageMap={home:'page-home',about:'page-about',services:'page-services',shop:'page-shop',appt:'page-appt',blog:'page-blog',contact:'page-contact',auth:'page-auth',profile:'page-profile',adminLogin:'page-admin-login',forbidden:'page-403',order:'page-order',payment:'page-payment',admin:'page-admin'};
-const navMap={home:'nb-home',about:'nb-about',services:'nb-services',shop:'nb-shop',blog:'nb-blog',contact:'nb-contact',auth:'nb-auth',profile:'nb-profile',adminLogin:'nb-admin-login',admin:'nb-admin'};
+// -- Sayfa navigasyon ---------------------------------------------------------
+const pageMap={home:'page-home',about:'page-about',services:'page-services',shop:'page-shop',appt:'page-appt',blog:'page-blog',contact:'page-contact',auth:'page-auth',profile:'page-profile',forbidden:'page-403',order:'page-order',payment:'page-payment'};
+const navMap={home:'nb-home',about:'nb-about',services:'nb-services',shop:'nb-shop',blog:'nb-blog',contact:'nb-contact',auth:'nb-auth',profile:'nb-profile'};
 function go(id){
   // Tek sayfa uygulamada sayfalar arasi gecisleri yoneten ana fonksiyon.
-  if(id==='admin' && !adminToken){id='adminLogin';}
+  if(id==='admin' || id==='adminLogin'){id='home';}
   if(id==='profile' && !userToken && !adminToken){id='auth';}
   if(id==='payment' && !PENDING_ORDER){id='order';}
   closeMobileMenu();
@@ -862,7 +689,6 @@ function go(id){
   const page=document.getElementById(pageMap[id]);
   if(page){page.classList.add('on');window.scrollTo(0,0);}
   if(navMap[id]){document.getElementById(navMap[id]).classList.add('on');}
-  if(id==='admin'){loadAdmin();}
   if(id==='profile'){loadProfile().catch(e=>toast(e.message || 'Profil yüklenemedi','err'));}
 }
 
@@ -873,6 +699,6 @@ initWhatsAppBubble();
 updateAuthUI();
 loadProducts();
 if(currentUser){loadProfile().catch(()=>{});}
-if(location.pathname==='/admin/login')go('adminLogin');
+if(location.pathname==='/admin/login' || location.pathname==='/admin')go('home');
 if(location.pathname==='/403')go('forbidden');
-if(new URLSearchParams(location.search).get('route')==='adminLogin')go('adminLogin');
+if(new URLSearchParams(location.search).get('route')==='adminLogin')go('home');

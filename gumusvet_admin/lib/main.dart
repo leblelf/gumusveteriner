@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
-const String apiBaseUrl = 'https://wwwgumusvet.com';
+const String apiBaseUrl = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: 'https://wwwgumusvet.com',
+);
 
 void main() {
   runApp(const GumusVetAdminApp());
@@ -129,8 +132,9 @@ class _LoginPageState extends State<LoginPage> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => AdminShell(storage: widget.storage)),
       );
-    } catch (_) {
-      setState(() => error = 'Giriş başarısız. Kullanıcı adı veya şifre hatalı.');
+    } catch (e) {
+      final message = e.toString().replaceFirst('Exception: ', '');
+      setState(() => error = message.isEmpty ? 'Giriş başarısız.' : message);
     } finally {
       if (mounted) setState(() => loading = false);
     }
