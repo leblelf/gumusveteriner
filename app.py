@@ -33,6 +33,8 @@ from flask import Flask, Response, render_template, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from services.sms_service import send_sms, validate_sms_message, normalize_tr_phone
+
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "gumus_veteriner.db"
@@ -1253,6 +1255,24 @@ def api_admin_users():
             ]
             users.append(user)
     return api_response(True, "Üyeler listelendi", users)
+
+
+@app.route("/api/admin/send-sms", methods=["POST"])
+@require_admin_api
+def api_admin_send_sms():
+    data = request.get_json(silent=True) or {}
+    phone = (data.get("phone") or "").strip()
+    message = data.get("message") or ""
+    try:
+        normalize_tr_phone(phone)
+        validate_sms_message(message)
+    except ValueError as exc:
+        return api_response(False, str(exc), None, HTTPStatus.BAD_REQUEST)
+
+    result = send_sms(phone, message)
+    if result.success:
+        return api_response(True, "SMS gönderildi", {})
+    return api_response(False, "SMS gönderilemedi", None, HTTPStatus.BAD_REQUEST)
 
 
 @app.route("/api/admin/login", methods=["POST"])

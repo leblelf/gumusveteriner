@@ -269,6 +269,7 @@ class _AdminShellState extends State<AdminShell> {
       ReviewReplyPage(api: api),
       SiteTextPage(api: api),
       UserManagementPage(api: api),
+      SendSmsPage(api: api),
       ClinicSettingsPage(storage: widget.storage),
     ];
     final mobile = MediaQuery.sizeOf(context).width < 820;
@@ -370,6 +371,7 @@ class Sidebar extends StatelessWidget {
       MenuItem(Icons.reviews_outlined, 'Yorumlar'),
       MenuItem(Icons.edit_note_outlined, 'Site Yazıları'),
       MenuItem(Icons.groups_outlined, 'Üyeler'),
+      MenuItem(Icons.sms_outlined, 'SMS Gönder'),
     ];
     return Container(
       width: 245,
@@ -393,8 +395,8 @@ class Sidebar extends StatelessWidget {
           SidebarTile(
             icon: Icons.settings_outlined,
             label: 'Ayarlar & Klinik',
-            active: selected == 9,
-            onTap: () => onSelected(9),
+            active: selected == 10,
+            onTap: () => onSelected(10),
           ),
           SidebarTile(icon: Icons.logout, label: 'Çıkış Yap', active: false, onTap: onLogout),
           const SizedBox(height: 18),
@@ -1695,6 +1697,127 @@ class ErrorState extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class SendSmsPage extends StatefulWidget {
+  const SendSmsPage({super.key, required this.api});
+
+  final ApiClient api;
+
+  @override
+  State<SendSmsPage> createState() => _SendSmsPageState();
+}
+
+class _SendSmsPageState extends State<SendSmsPage> {
+  final phone = TextEditingController();
+  final message = TextEditingController();
+  bool sending = false;
+  String? result;
+  bool success = false;
+
+  Future<void> sendSms() async {
+    setState(() {
+      sending = true;
+      result = null;
+      success = false;
+    });
+    try {
+      final response = await widget.api.request(
+        AppConstants.sendSmsEndpoint,
+        method: 'POST',
+        body: {
+          'phone': phone.text.trim(),
+          'message': message.text.trim(),
+        },
+      );
+      setState(() {
+        success = true;
+        result = response['message']?.toString() ?? 'SMS gönderildi';
+      });
+    } catch (e) {
+      setState(() {
+        success = false;
+        result = e.toString();
+      });
+    } finally {
+      if (mounted) setState(() => sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final length = message.text.length;
+    return ListView(
+      children: [
+        const PageHeader(
+          title: 'SMS Gönder',
+          subtitle: 'Kayıtlı veya özel telefon numaralarına manuel SMS gönderin.',
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(22),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: phone,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Telefon numarası',
+                        hintText: '05xxxxxxxxx',
+                        prefixIcon: Icon(Icons.phone_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: message,
+                      minLines: 6,
+                      maxLines: 10,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        labelText: 'Mesaj metni',
+                        hintText: 'Gönderilecek özel mesaj...',
+                        alignLabelWithHint: true,
+                        prefixIcon: Icon(Icons.sms_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text('$length / 612 karakter', style: TextStyle(color: length > 612 ? Colors.red : appMuted(context))),
+                        const Spacer(),
+                        Text('Ticari SMS için izinli kullanıcı ve İYS kaydı gereklidir.', style: TextStyle(color: appMuted(context), fontSize: 12)),
+                      ],
+                    ),
+                    if (result != null)
+                      Container(
+                        margin: const EdgeInsets.only(top: 14),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: success ? Colors.green.withOpacity(.12) : Colors.red.withOpacity(.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(result!, style: TextStyle(color: success ? Colors.green.shade700 : Colors.red.shade700)),
+                      ),
+                    const SizedBox(height: 18),
+                    FilledButton.icon(
+                      onPressed: sending ? null : sendSms,
+                      icon: const Icon(Icons.send_outlined),
+                      label: Text(sending ? 'Gönderiliyor...' : 'SMS Gönder'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -27,6 +27,7 @@ class AppConstants {
   static const String siteTextsEndpoint = '/api/admin/site-texts';
   static const String siteTextsUpdateEndpoint = '/api/admin/site-texts/update';
   static const String usersEndpoint = '/api/admin/users';
+  static const String sendSmsEndpoint = '/api/admin/send-sms';
 
   static const String tokenKey = 'admin_token';
   static const String rememberMeKey = 'remember_me';
