@@ -94,6 +94,8 @@ nav{background:rgba(255,255,255,.9);border-bottom:1px solid var(--border);positi
 .page-top{background:var(--teal-light);padding:1.75rem 1.5rem;border-bottom:1px solid var(--border)}
 .page-top h2{font-family:'Cormorant Garamond',serif;font-size:1.8rem;color:var(--teal);margin-bottom:.2rem}
 .page-top p{font-size:13px;color:var(--muted)}
+#page-appt .sec{display:flex;flex-direction:column;align-items:center}
+#page-appt .info-box,#page-appt form{width:100%;max-width:560px}
 
 /* ── GRID ── */
 .g3{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:1rem}

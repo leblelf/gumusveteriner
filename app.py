@@ -33,6 +33,7 @@ from flask import Flask, Response, render_template, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from services.email_service import EmailResult, send_email
 from services.sms_service import send_sms, validate_sms_message, normalize_tr_phone
 
 
@@ -489,6 +490,41 @@ def get_request_session_user() -> sqlite3.Row | None:
         ).fetchone()
 
 
+def order_with_items(db: sqlite3.Connection, order_id: int) -> dict | None:
+    order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if not order:
+        return None
+    payload = row_to_dict(order)
+    payload["items"] = [
+        row_to_dict(row)
+        for row in db.execute(
+            """
+            SELECT order_items.product_id, products.name, order_items.quantity, order_items.unit_price
+            FROM order_items
+            LEFT JOIN products ON products.id = order_items.product_id
+            WHERE order_items.order_id = ?
+            ORDER BY order_items.id
+            """,
+            (order_id,),
+        ).fetchall()
+    ]
+    return payload
+
+
+def send_order_status_email(order: dict, status: str) -> EmailResult | None:
+    if status != "shipped":
+        return None
+    subject = f"Gümüş Veteriner siparişiniz kargoya verildi - #{order['id']}"
+    body = (
+        f"Merhaba {order.get('first_name', '')},\n\n"
+        f"#{order['id']} numaralı siparişiniz kargoya verildi.\n"
+        "Teslimat sürecinde adresinizi kontrol etmeyi unutmayın.\n\n"
+        "Gümüş Veteriner Muayenehanesi\n"
+        "0546 136 14 33"
+    )
+    return send_email(order.get("email", ""), subject, body)
+
+
 def api_response(success: bool, message: str, data=None, status: HTTPStatus = HTTPStatus.OK):
     """Mobil/masaustu uygulamalar icin standart JSON cevap formati."""
     return {"success": success, "message": message, "data": data}, int(status)
@@ -817,6 +853,22 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
 
         now = datetime.now().isoformat(timespec="seconds")
         with connect() as db:
+            if user and data.get("save_pet"):
+                pet_name = (data.get("pet_name") or "").strip()
+                pet_species = (data.get("pet_type") or "").strip()
+                if pet_name and pet_species and pet_species != "Belirtilmedi":
+                    existing_pet = db.execute(
+                        "SELECT id FROM pets WHERE user_id = ? AND LOWER(name) = LOWER(?) AND LOWER(species) = LOWER(?)",
+                        (user["id"], pet_name, pet_species),
+                    ).fetchone()
+                    if not existing_pet:
+                        db.execute(
+                            """
+                            INSERT INTO pets (user_id, name, species, age, notes, created_at)
+                            VALUES (?, ?, ?, '', 'Randevu ekranından eklendi', ?)
+                            """,
+                            (user["id"], pet_name, pet_species, now),
+                        )
             if not is_appointment_time_available(db, data["appt_date"], data["appt_time"]):
                 self.send_json({"error": "Bu randevu saati dolu veya kapali. Lutfen baska bir saat secin."}, HTTPStatus.CONFLICT)
                 return
@@ -1554,6 +1606,83 @@ def api_admin_users():
             ]
             users.append(user)
     return api_response(True, "Üyeler listelendi", users)
+
+
+@app.route("/api/admin/users/update/<int:user_id>", methods=["PATCH", "PUT"])
+@require_admin_api
+def api_admin_users_update(user_id: int):
+    data = request.get_json(silent=True) or {}
+    updates = []
+    params = []
+    if "role" in data:
+        if data["role"] not in {"member", "admin"}:
+            return api_response(False, "Geçersiz rol", None, HTTPStatus.BAD_REQUEST)
+        updates.append("role = ?")
+        params.append(data["role"])
+    if "is_banned" in data:
+        updates.append("is_banned = ?")
+        params.append(1 if data["is_banned"] else 0)
+    if not updates:
+        return api_response(False, "Güncellenecek alan yok", None, HTTPStatus.BAD_REQUEST)
+    params.append(user_id)
+    with connect() as db:
+        db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
+        if data.get("is_banned"):
+            db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        db.commit()
+        row = db.execute("SELECT id, full_name, email, phone, role, is_banned, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        return api_response(False, "Üye bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Üye güncellendi", row_to_dict(row))
+
+
+@app.route("/api/admin/users/delete/<int:user_id>", methods=["DELETE"])
+@require_admin_api
+def api_admin_users_delete(user_id: int):
+    with connect() as db:
+        row = db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            return api_response(False, "Üye bulunamadı", None, HTTPStatus.NOT_FOUND)
+        db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        db.execute("DELETE FROM user_addresses WHERE user_id = ?", (user_id,))
+        db.execute("DELETE FROM pets WHERE user_id = ?", (user_id,))
+        db.execute("UPDATE orders SET user_id = NULL WHERE user_id = ?", (user_id,))
+        db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        db.commit()
+    return api_response(True, "Üye silindi", {})
+
+
+@app.route("/api/admin/orders", methods=["GET"])
+@require_admin_api
+def api_admin_orders():
+    with connect() as db:
+        rows = db.execute("SELECT id FROM orders ORDER BY created_at DESC").fetchall()
+        orders = [order_with_items(db, row["id"]) for row in rows]
+    return api_response(True, "Siparişler listelendi", [order for order in orders if order])
+
+
+@app.route("/api/admin/orders/update/<int:order_id>", methods=["PATCH", "PUT"])
+@require_admin_api
+def api_admin_orders_update(order_id: int):
+    data = request.get_json(silent=True) or {}
+    status = (data.get("status") or "").strip()
+    allowed = {"pending", "confirmed", "shipped", "delivered", "cancelled"}
+    if status not in allowed:
+        return api_response(False, "Geçersiz sipariş durumu", None, HTTPStatus.BAD_REQUEST)
+    mail_result = None
+    with connect() as db:
+        before = db.execute("SELECT status FROM orders WHERE id = ?", (order_id,)).fetchone()
+        if not before:
+            return api_response(False, "Sipariş bulunamadı", None, HTTPStatus.NOT_FOUND)
+        db.execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
+        db.commit()
+        order = order_with_items(db, order_id)
+    if order and status == "shipped" and before["status"] != "shipped":
+        mail_result = send_order_status_email(order, status)
+    data_payload = order or {}
+    if mail_result:
+        data_payload["mail"] = {"success": mail_result.success, "message": mail_result.message}
+    return api_response(True, "Sipariş durumu güncellendi", data_payload)
 
 
 @app.route("/api/admin/send-sms", methods=["POST"])

@@ -178,6 +178,12 @@
         <label>Kayıtlı hayvanınız için mi?</label>
         <select id="apptPetSelect" onchange="selectAppointmentPet()"></select>
       </div>
+      <div id="apptNewPetFields" style="display:none">
+        <div class="frow">
+          <div><label>Yeni Hayvan Adı *</label><input type="text" id="newPetName" placeholder="Pamuk"></div>
+          <div><label>Yeni Hayvan Türü *</label><select id="newPetSpecies"><option value="">Seçin...</option><option>Köpek</option><option>Kedi</option><option>Tavşan</option><option>Kuş</option><option>Diğer</option></select></div>
+        </div>
+      </div>
       <div id="apptPersonalFields">
       <div class="frow">
         <div><label>Ad *</label><input type="text" id="fn" placeholder="Adınız"></div>

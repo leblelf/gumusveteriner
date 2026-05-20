@@ -517,10 +517,16 @@ function renderAppointmentPetSelect(){
   const select=document.getElementById('apptPetSelect');
   if(!select)return;
   const pets=PROFILE.pets || [];
-  select.innerHTML='<option value="">Kayıtlı hayvan seçmeden devam et</option>'+pets.map(p=>`<option value="${p.id}">${p.name} - ${p.species}</option>`).join('');
+  select.innerHTML='<option value="">Seçim yapın</option>'+pets.map(p=>`<option value="${p.id}">${p.name} - ${p.species}</option>`).join('')+'<option value="new">Yeni hayvan gireceğim</option>';
+  if(!pets.length)select.value='new';
+  selectAppointmentPet();
 }
 function selectAppointmentPet(){
-  const id=Number(document.getElementById('apptPetSelect')?.value || 0);
+  const value=document.getElementById('apptPetSelect')?.value || '';
+  const newBox=document.getElementById('apptNewPetFields');
+  if(newBox)newBox.style.display=value==='new' ? 'block' : 'none';
+  if(value==='new')return;
+  const id=Number(value || 0);
   const pet=(PROFILE.pets || []).find(item=>Number(item.id)===id);
   if(!pet)return;
   document.getElementById('pn').value=pet.name || '';
@@ -566,6 +572,14 @@ async function submitAppt(){
   if(!userToken && !validPhone(ph)){showMsg('apptOk','apptErr','err','Geçerli telefon: 05XX XXX XX XX');return;}
   if(!userToken && !pt){showMsg('apptOk','apptErr','err','Lütfen hayvan türü seçin.');return;}
   if(!userToken && !sv){showMsg('apptOk','apptErr','err','Lütfen hizmet türü seçin.');return;}
+  const petChoice=document.getElementById('apptPetSelect')?.value || '';
+  if(userToken && petChoice==='new'){
+    const newName=document.getElementById('newPetName').value.trim();
+    const newSpecies=document.getElementById('newPetSpecies').value;
+    if(!newName || !newSpecies){showMsg('apptOk','apptErr','err','Yeni hayvan adı ve türü zorunlu.');return;}
+    document.getElementById('pn').value=newName;
+    document.getElementById('pt').value=newSpecies;
+  }
   if(!dt||new Date(dt)<new Date().setHours(0,0,0,0)){showMsg('apptOk','apptErr','err','Lütfen gelecek bir tarih seçin.');return;}
   if(!tm){showMsg('apptOk','apptErr','err','Lütfen saat seçin.');return;}
 
@@ -575,9 +589,10 @@ async function submitAppt(){
   const payload={
     first_name:fn, last_name:ln, phone:ph.replace(/\s/g,''),
     email:document.getElementById('em').value,
-    pet_type:pt, pet_name:document.getElementById('pn').value,
+    pet_type:document.getElementById('pt').value || pt, pet_name:document.getElementById('pn').value,
     service:sv, appt_date:dt, appt_time:tm,
-    notes:document.getElementById('nt').value
+    notes:document.getElementById('nt').value,
+    save_pet:userToken && petChoice==='new'
   };
 
   try{
@@ -590,6 +605,7 @@ async function submitAppt(){
     if(!res.ok){throw new Error(data.error || 'Randevu oluşturulamadı.');}
     showMsg('apptOk','apptErr','ok',`✅ Randevunuz oluşturuldu! Randevu numaranız: #${data.id}`);
     document.getElementById('apptForm').reset();
+    if(userToken)await loadProfile();
     applyAppointmentMemberMode();
     await loadAppointmentSlots();
   }catch(e){

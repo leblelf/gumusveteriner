@@ -265,7 +265,7 @@ class _AdminShellState extends State<AdminShell> {
       PetListPage(query: query),
       HospitalizedPage(query: query),
       ProductPage(api: api, query: query),
-      ServicePage(api: api, query: query),
+      OrdersPage(api: api, query: query),
       ReviewReplyPage(api: api, query: query),
       SiteTextPage(api: api, query: query),
       UserManagementPage(api: api, query: query),
@@ -368,7 +368,7 @@ class Sidebar extends StatelessWidget {
       MenuItem(Icons.pets_outlined, 'Pet Listesi'),
       MenuItem(Icons.local_hospital_outlined, 'Yatan Hastalar'),
       MenuItem(Icons.inventory_2_outlined, 'Ürünler'),
-      MenuItem(Icons.medical_services_outlined, 'Hizmetler'),
+      MenuItem(Icons.shopping_bag_outlined, 'Gelen Siparişler'),
       MenuItem(Icons.reviews_outlined, 'Yorumlar'),
       MenuItem(Icons.edit_note_outlined, 'Site Yazıları'),
       MenuItem(Icons.groups_outlined, 'Üyeler'),
@@ -1266,6 +1266,7 @@ class CrudListPage extends StatefulWidget {
 
 class _CrudListPageState extends State<CrudListPage> {
   late Future<Map<String, dynamic>> future;
+  String localQuery = '';
 
   @override
   void initState() {
@@ -1279,6 +1280,8 @@ class _CrudListPageState extends State<CrudListPage> {
     final name = TextEditingController(text: item?['name']?.toString() ?? '');
     final price = TextEditingController(text: item?['price']?.toString() ?? '0');
     final category = TextEditingController(text: item?['category']?.toString() ?? 'Genel');
+    final stock = TextEditingController(text: item?['stock']?.toString() ?? '0');
+    final isProduct = widget.loadPath == AppConstants.productsEndpoint;
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -1291,13 +1294,17 @@ class _CrudListPageState extends State<CrudListPage> {
             TextField(controller: category, decoration: const InputDecoration(labelText: 'Kategori')),
             const SizedBox(height: 10),
             TextField(controller: price, decoration: const InputDecoration(labelText: 'Fiyat'), keyboardType: TextInputType.number),
+            if (isProduct) ...[
+              const SizedBox(height: 10),
+              TextField(controller: stock, decoration: const InputDecoration(labelText: 'Stok'), keyboardType: TextInputType.number),
+            ],
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Vazgeç')),
           FilledButton(
             onPressed: () async {
-              final body = {'name': name.text, 'price': double.tryParse(price.text) ?? 0, 'category': category.text, 'stock': 0};
+              final body = {'name': name.text, 'price': double.tryParse(price.text) ?? 0, 'category': category.text, 'stock': int.tryParse(stock.text) ?? 0};
               if (item == null) {
                 await widget.api.request(widget.addPath, method: 'POST', body: body);
               } else {
@@ -1322,6 +1329,17 @@ class _CrudListPageState extends State<CrudListPage> {
           subtitle: widget.subtitle,
           action: FilledButton.icon(onPressed: () => save(), icon: const Icon(Icons.add), label: const Text('Yeni Ekle')),
         ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 0, 28, 12),
+          child: TextField(
+            onChanged: (value) => setState(() => localQuery = value),
+            decoration: const InputDecoration(
+              isDense: true,
+              hintText: 'Ürün adı, kategori, fiyat veya stok ara...',
+              prefixIcon: Icon(Icons.search),
+            ),
+          ),
+        ),
         Expanded(
           child: FutureBuilder<Map<String, dynamic>>(
             future: future,
@@ -1331,7 +1349,7 @@ class _CrudListPageState extends State<CrudListPage> {
               }
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
               final allRows = snapshot.data!['data'] as List;
-              final q = widget.query.trim().toLowerCase();
+              final q = '${widget.query} $localQuery'.trim().toLowerCase();
               final rows = q.isEmpty
                   ? allRows
                   : allRows.where((item) => (item as Map<String, dynamic>).values.join(' ').toLowerCase().contains(q)).toList();
@@ -1357,6 +1375,106 @@ class _CrudListPageState extends State<CrudListPage> {
                           ),
                         ],
                       ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class OrdersPage extends StatefulWidget {
+  const OrdersPage({super.key, required this.api, required this.query});
+
+  final ApiClient api;
+  final String query;
+
+  @override
+  State<OrdersPage> createState() => _OrdersPageState();
+}
+
+class _OrdersPageState extends State<OrdersPage> {
+  late Future<Map<String, dynamic>> future = widget.api.request(AppConstants.ordersEndpoint);
+
+  void reload() => setState(() => future = widget.api.request(AppConstants.ordersEndpoint));
+
+  String statusLabel(String status) {
+    return {
+      'pending': 'Bekliyor',
+      'confirmed': 'Onaylandı',
+      'shipped': 'Kargoya verildi',
+      'delivered': 'Teslim edildi',
+      'cancelled': 'İptal',
+    }[status] ?? status;
+  }
+
+  Future<void> updateStatus(Map<String, dynamic> order, String status) async {
+    final result = await widget.api.request('${AppConstants.ordersUpdateEndpoint}/${order['id']}', method: 'PATCH', body: {'status': status});
+    final mail = result['data'] is Map ? (result['data']['mail'] as Map?) : null;
+    if (!mounted) return;
+    final extra = status == 'shipped'
+        ? (mail == null ? ' Mail ayarı yoksa gönderim atlanır.' : ' Mail: ${mail['message']}')
+        : '';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sipariş durumu güncellendi.$extra')));
+    reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const PageHeader(title: 'Gelen Siparişler', subtitle: 'Site üzerinden gelen siparişleri ve kargo durumunu yönetin.'),
+        Expanded(
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) return ErrorState(message: snapshot.error.toString(), onRetry: reload);
+              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+              final allRows = snapshot.data!['data'] as List;
+              final q = widget.query.trim().toLowerCase();
+              final rows = q.isEmpty ? allRows : allRows.where((item) => (item as Map<String, dynamic>).values.join(' ').toLowerCase().contains(q)).toList();
+              if (rows.isEmpty) return const Center(child: Text('Henüz sipariş yok.'));
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                itemCount: rows.length,
+                itemBuilder: (_, index) {
+                  final order = rows[index] as Map<String, dynamic>;
+                  final items = (order['items'] as List?) ?? [];
+                  final status = order['status']?.toString() ?? 'pending';
+                  return Card(
+                    child: ExpansionTile(
+                      leading: CircleAvatar(backgroundColor: appOrange(context).withOpacity(.12), child: Icon(Icons.shopping_bag_outlined, color: appOrange(context))),
+                      title: Text('#${order['id']} ${order['first_name'] ?? ''} ${order['last_name'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                      subtitle: Text('${order['phone'] ?? '-'} • ₺${order['total'] ?? 0} • ${statusLabel(status)}'),
+                      trailing: DropdownButton<String>(
+                        value: status,
+                        items: const [
+                          DropdownMenuItem(value: 'pending', child: Text('Bekliyor')),
+                          DropdownMenuItem(value: 'confirmed', child: Text('Onaylandı')),
+                          DropdownMenuItem(value: 'shipped', child: Text('Kargoya verildi')),
+                          DropdownMenuItem(value: 'delivered', child: Text('Teslim edildi')),
+                          DropdownMenuItem(value: 'cancelled', child: Text('İptal')),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) updateStatus(order, value);
+                        },
+                      ),
+                      childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                      children: [
+                        Align(alignment: Alignment.centerLeft, child: Text('Adres: ${order['address'] ?? '-'}')),
+                        const SizedBox(height: 8),
+                        InfoSection(
+                          title: 'Ürünler',
+                          rows: items.map((item) {
+                            final row = item as Map<String, dynamic>;
+                            return '${row['name'] ?? 'Ürün'} • Adet: ${row['quantity']} • ₺${row['unit_price']}';
+                          }).toList(),
+                        ),
+                      ],
                     ),
                   );
                 },
@@ -1609,6 +1727,28 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
   void reload() => setState(() => future = widget.api.request(AppConstants.usersEndpoint));
 
+  Future<void> updateUser(Map<String, dynamic> user, Map<String, dynamic> body) async {
+    await widget.api.request('${AppConstants.usersUpdateEndpoint}/${user['id']}', method: 'PATCH', body: body);
+    reload();
+  }
+
+  Future<void> deleteUser(Map<String, dynamic> user) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Üye silinsin mi?'),
+        content: Text('${user['full_name']} kalıcı olarak silinecek.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Vazgeç')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sil')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await widget.api.request('${AppConstants.usersDeleteEndpoint}/${user['id']}', method: 'DELETE');
+    reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1661,6 +1801,28 @@ class _UserManagementPageState extends State<UserManagementPage> {
                           final row = item as Map<String, dynamic>;
                           return '${row['name'] ?? '-'} • ${row['species'] ?? '-'} • Yaş: ${row['age'] ?? '-'}';
                         }).toList()),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilledButton.tonalIcon(
+                              onPressed: () => updateUser(user, {'is_banned': user['is_banned'] == 1 ? 0 : 1}),
+                              icon: Icon(user['is_banned'] == 1 ? Icons.lock_open_outlined : Icons.block_outlined),
+                              label: Text(user['is_banned'] == 1 ? 'Banı Kaldır' : 'Banla'),
+                            ),
+                            FilledButton.tonalIcon(
+                              onPressed: () => updateUser(user, {'role': user['role'] == 'admin' ? 'member' : 'admin'}),
+                              icon: const Icon(Icons.admin_panel_settings_outlined),
+                              label: Text(user['role'] == 'admin' ? 'Üye Yap' : 'Admin Yap'),
+                            ),
+                            FilledButton.tonalIcon(
+                              onPressed: () => deleteUser(user),
+                              icon: const Icon(Icons.delete_outline),
+                              label: const Text('Sil'),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   );
