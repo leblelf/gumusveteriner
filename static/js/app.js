@@ -436,15 +436,38 @@ function updateAuthUI(){
   const label=document.getElementById('nav-user');
   const logoutBtn=document.getElementById('logoutBtn');
   if(adminToken){
-    label.textContent='Admin';
-    logoutBtn.style.display='inline-flex';
+    if(label)label.textContent='Admin';
+    if(logoutBtn)logoutBtn.style.display='inline-flex';
   }else if(currentUser){
-    label.textContent=currentUser.full_name || currentUser.email;
-    logoutBtn.style.display='inline-flex';
+    if(label)label.textContent=currentUser.full_name || currentUser.email;
+    if(logoutBtn)logoutBtn.style.display='inline-flex';
   }else{
-    label.textContent='';
-    logoutBtn.style.display='none';
+    if(label)label.textContent='';
+    if(logoutBtn)logoutBtn.style.display='none';
   }
+}
+
+async function logout(){
+  // Oturumu kapatir, tarayicidaki tokenlari temizler ve ana sayfaya doner.
+  try{
+    const token=userToken || adminToken;
+    if(token){
+      await fetch('/api/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`}});
+    }
+  }catch(e){
+    console.warn('Cikis istegi tamamlanamadi:',e);
+  }
+  userToken='';
+  adminToken='';
+  currentUser=null;
+  PROFILE={user:null,addresses:[],pets:[]};
+  localStorage.removeItem('gvUserToken');
+  localStorage.removeItem('gvAdminToken');
+  localStorage.removeItem('gvUser');
+  updateAuthUI();
+  applyAppointmentMemberMode();
+  toast('Çıkış yapıldı.','ok');
+  go('home');
 }
 function setAnimal(kind,button){
   const face=document.getElementById('animalFace');
@@ -863,7 +886,7 @@ async function submitRegister(){
 
 // -- Sayfa navigasyon ---------------------------------------------------------
 const pageMap={home:'page-home',about:'page-about',services:'page-services',shop:'page-shop',appt:'page-appt',blog:'page-blog',contact:'page-contact',auth:'page-auth',profile:'page-profile',reviews:'page-reviews',forbidden:'page-403',order:'page-order',payment:'page-payment'};
-const navMap={home:'nb-home',about:'nb-about',services:'nb-services',shop:'nb-shop',blog:'nb-blog',contact:'nb-contact',auth:'nb-auth',profile:'nb-profile'};
+const navMap={home:'nb-home',about:'nb-about',services:'nb-services',shop:'nb-shop',blog:'nb-blog',contact:'nb-contact',auth:'nb-auth'};
 function go(id){
   // Tek sayfa uygulamada sayfalar arasi gecisleri yoneten ana fonksiyon.
   if(id==='admin' || id==='adminLogin'){id='home';}
@@ -874,7 +897,10 @@ function go(id){
   Object.values(navMap).forEach(n=>{const el=document.getElementById(n);if(el)el.classList.remove('on');});
   const page=document.getElementById(pageMap[id]);
   if(page){page.classList.add('on');window.scrollTo(0,0);}
-  if(navMap[id]){document.getElementById(navMap[id]).classList.add('on');}
+  if(navMap[id]){
+    const activeNav=document.getElementById(navMap[id]);
+    if(activeNav)activeNav.classList.add('on');
+  }
   if(id==='profile'){loadProfile().catch(e=>toast(e.message || 'Profil yüklenemedi','err'));}
   if(id==='appt'){
     if(currentUser && !PROFILE.user){

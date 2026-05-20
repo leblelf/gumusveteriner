@@ -287,8 +287,7 @@ textarea{resize:vertical;min-height:80px}
 .nav-user:hover{background:var(--teal-light)}
 .admin-only{display:none}
 body.admin-session .admin-only{display:inline-flex}
-.profile-only{display:none}
-body.user-session .profile-only,body.admin-session .profile-only{display:inline-flex}
+.profile-only{display:none!important}
 body.user-session .nav-user,body.admin-session .nav-user{display:inline}
 body.user-session #nb-auth,body.admin-session #nb-auth{display:none}
 .site-footer{margin:2rem 1.5rem 1.25rem;padding:1rem 1.25rem;border:1px solid var(--border);border-radius:14px;background:color-mix(in srgb,var(--card),transparent 18%);backdrop-filter:blur(10px);display:flex;gap:1rem;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px}
@@ -342,7 +341,7 @@ body.user-session .guest-order,body.admin-session .guest-order{display:none}
   nav.mobile-open .nb{display:flex;width:100%;justify-content:flex-start;border-radius:12px;padding:12px 14px;background:transparent}
   nav.mobile-open .mobile-menu-btn{position:static;width:100%;height:auto;padding:12px 14px;background:var(--teal);color:#fff;justify-content:center}
   nav.mobile-open .logo{width:100%;margin:0 0 .75rem;padding-left:0}
-  nav.mobile-open .nav-user{display:none!important}
+  nav.mobile-open .nav-user{display:flex!important;width:100%;justify-content:flex-start;border:1px solid var(--border2);border-radius:12px;padding:12px 14px;background:var(--teal-light);color:var(--teal);font-weight:600}
   .mobile-menu-scrim.open{display:block;position:fixed;left:min(84vw,320px);top:0;right:0;bottom:0;z-index:840;background:rgba(0,0,0,.32)}
   nav.mobile-open .nb:not(.mobile-menu-btn),nav.mobile-open .theme-toggle{min-width:0}
   .nb.cta{padding:7px 12px}
