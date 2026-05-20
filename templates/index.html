@@ -174,6 +174,10 @@
     <div class="info-box" id="site-appointment-info">Randevunuz en geç 2 saat içinde SMS ile onaylanır. İptal için 24 saat önce haber vermeniz yeterli.</div>
     <form id="apptForm" style="max-width:560px" onsubmit="return false">
       <div class="info-box" id="apptMemberNote" style="display:none">Üye girişi yaptığınız için kişisel bilgileriniz hesabınızdan alınacak. Sadece uygun randevu günü ve saatini seçmeniz yeterli.</div>
+      <div class="info-box" id="apptPetBox" style="display:none">
+        <label>Kayıtlı hayvanınız için mi?</label>
+        <select id="apptPetSelect" onchange="selectAppointmentPet()"></select>
+      </div>
       <div id="apptPersonalFields">
       <div class="frow">
         <div><label>Ad *</label><input type="text" id="fn" placeholder="Adınız"></div>

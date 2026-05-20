@@ -261,14 +261,14 @@ class _AdminShellState extends State<AdminShell> {
     final api = ApiClient(widget.storage);
     final pages = [
       DashboardPage(api: api),
-      AppointmentPage(api: api),
+      AppointmentPage(api: api, query: query),
       PetListPage(query: query),
       HospitalizedPage(query: query),
-      ProductPage(api: api),
-      ServicePage(api: api),
-      ReviewReplyPage(api: api),
-      SiteTextPage(api: api),
-      UserManagementPage(api: api),
+      ProductPage(api: api, query: query),
+      ServicePage(api: api, query: query),
+      ReviewReplyPage(api: api, query: query),
+      SiteTextPage(api: api, query: query),
+      UserManagementPage(api: api, query: query),
       SendSmsPage(api: api),
       AppointmentSlotsPage(api: api),
       ClinicSettingsPage(storage: widget.storage),
@@ -1092,9 +1092,10 @@ class OwnerBadge extends StatelessWidget {
 }
 
 class AppointmentPage extends StatefulWidget {
-  const AppointmentPage({super.key, required this.api});
+  const AppointmentPage({super.key, required this.api, required this.query});
 
   final ApiClient api;
+  final String query;
 
   @override
   State<AppointmentPage> createState() => _AppointmentPageState();
@@ -1118,7 +1119,11 @@ class _AppointmentPageState extends State<AppointmentPage> {
                 return ErrorState(message: snapshot.error.toString(), onRetry: reload);
               }
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-              final rows = snapshot.data!['data'] as List;
+              final allRows = snapshot.data!['data'] as List;
+              final q = widget.query.trim().toLowerCase();
+              final rows = q.isEmpty
+                  ? allRows
+                  : allRows.where((item) => (item as Map<String, dynamic>).values.join(' ').toLowerCase().contains(q)).toList();
               if (rows.isEmpty) return const Center(child: Text('Henüz randevu yok.'));
               return ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -1196,9 +1201,10 @@ class HospitalizedPage extends StatelessWidget {
 }
 
 class ProductPage extends StatelessWidget {
-  const ProductPage({super.key, required this.api});
+  const ProductPage({super.key, required this.api, required this.query});
 
   final ApiClient api;
+  final String query;
 
   @override
   Widget build(BuildContext context) => CrudListPage(
@@ -1209,13 +1215,15 @@ class ProductPage extends StatelessWidget {
         updatePath: AppConstants.productsUpdateEndpoint,
         deletePath: AppConstants.productsDeleteEndpoint,
         api: api,
+        query: query,
       );
 }
 
 class ServicePage extends StatelessWidget {
-  const ServicePage({super.key, required this.api});
+  const ServicePage({super.key, required this.api, required this.query});
 
   final ApiClient api;
+  final String query;
 
   @override
   Widget build(BuildContext context) => CrudListPage(
@@ -1226,6 +1234,7 @@ class ServicePage extends StatelessWidget {
         updatePath: AppConstants.servicesUpdateEndpoint,
         deletePath: AppConstants.servicesDeleteEndpoint,
         api: api,
+        query: query,
       );
 }
 
@@ -1239,6 +1248,7 @@ class CrudListPage extends StatefulWidget {
     required this.updatePath,
     required this.deletePath,
     required this.api,
+    required this.query,
   });
 
   final String title;
@@ -1248,6 +1258,7 @@ class CrudListPage extends StatefulWidget {
   final String updatePath;
   final String deletePath;
   final ApiClient api;
+  final String query;
 
   @override
   State<CrudListPage> createState() => _CrudListPageState();
@@ -1319,7 +1330,11 @@ class _CrudListPageState extends State<CrudListPage> {
                 return ErrorState(message: snapshot.error.toString(), onRetry: reload);
               }
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-              final rows = snapshot.data!['data'] as List;
+              final allRows = snapshot.data!['data'] as List;
+              final q = widget.query.trim().toLowerCase();
+              final rows = q.isEmpty
+                  ? allRows
+                  : allRows.where((item) => (item as Map<String, dynamic>).values.join(' ').toLowerCase().contains(q)).toList();
               return ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 28),
                 itemCount: rows.length,
@@ -1355,9 +1370,10 @@ class _CrudListPageState extends State<CrudListPage> {
 }
 
 class ReviewReplyPage extends StatefulWidget {
-  const ReviewReplyPage({super.key, required this.api});
+  const ReviewReplyPage({super.key, required this.api, required this.query});
 
   final ApiClient api;
+  final String query;
 
   @override
   State<ReviewReplyPage> createState() => _ReviewReplyPageState();
@@ -1412,7 +1428,11 @@ class _ReviewReplyPageState extends State<ReviewReplyPage> {
             future: future,
             builder: (context, snapshot) {
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-              final rows = snapshot.data!['data'] as List;
+              final allRows = snapshot.data!['data'] as List;
+              final q = widget.query.trim().toLowerCase();
+              final rows = q.isEmpty
+                  ? allRows
+                  : allRows.where((item) => (item as Map<String, dynamic>).values.join(' ').toLowerCase().contains(q)).toList();
               if (rows.isEmpty) return const Center(child: Text('Henüz yorum yok.'));
               return ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -1485,9 +1505,10 @@ class _ReviewReplyPageState extends State<ReviewReplyPage> {
 }
 
 class SiteTextPage extends StatefulWidget {
-  const SiteTextPage({super.key, required this.api});
+  const SiteTextPage({super.key, required this.api, required this.query});
 
   final ApiClient api;
+  final String query;
 
   @override
   State<SiteTextPage> createState() => _SiteTextPageState();
@@ -1542,7 +1563,11 @@ class _SiteTextPageState extends State<SiteTextPage> {
             future: future,
             builder: (context, snapshot) {
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-              final rows = snapshot.data!['data'] as List;
+              final allRows = snapshot.data!['data'] as List;
+              final q = widget.query.trim().toLowerCase();
+              final rows = q.isEmpty
+                  ? allRows
+                  : allRows.where((item) => (item as Map<String, dynamic>).values.join(' ').toLowerCase().contains(q)).toList();
               return ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 28),
                 itemCount: rows.length,
@@ -1570,9 +1595,10 @@ class _SiteTextPageState extends State<SiteTextPage> {
 }
 
 class UserManagementPage extends StatefulWidget {
-  const UserManagementPage({super.key, required this.api});
+  const UserManagementPage({super.key, required this.api, required this.query});
 
   final ApiClient api;
+  final String query;
 
   @override
   State<UserManagementPage> createState() => _UserManagementPageState();
@@ -1599,7 +1625,11 @@ class _UserManagementPageState extends State<UserManagementPage> {
                 return ErrorState(message: snapshot.error.toString(), onRetry: reload);
               }
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-              final users = snapshot.data!['data'] as List;
+              final allUsers = snapshot.data!['data'] as List;
+              final q = widget.query.trim().toLowerCase();
+              final users = q.isEmpty
+                  ? allUsers
+                  : allUsers.where((item) => (item as Map<String, dynamic>).values.join(' ').toLowerCase().contains(q)).toList();
               if (users.isEmpty) return const Center(child: Text('Henüz üye yok.'));
               return ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 28),

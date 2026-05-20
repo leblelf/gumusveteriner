@@ -79,6 +79,31 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TRIGGER IF NOT EXISTS prevent_duplicate_active_appointments_insert
+            BEFORE INSERT ON appointments
+            WHEN EXISTS (
+                SELECT 1 FROM appointments
+                WHERE appt_date = NEW.appt_date
+                  AND appt_time = NEW.appt_time
+                  AND status NOT IN ('cancelled')
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'DUPLICATE_APPOINTMENT_SLOT');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS prevent_duplicate_active_appointments_update
+            BEFORE UPDATE OF appt_date, appt_time, status ON appointments
+            WHEN NEW.status NOT IN ('cancelled') AND EXISTS (
+                SELECT 1 FROM appointments
+                WHERE id <> NEW.id
+                  AND appt_date = NEW.appt_date
+                  AND appt_time = NEW.appt_time
+                  AND status NOT IN ('cancelled')
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'DUPLICATE_APPOINTMENT_SLOT');
+            END;
+
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -789,26 +814,32 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             if not is_appointment_time_available(db, data["appt_date"], data["appt_time"]):
                 self.send_json({"error": "Bu randevu saati dolu veya kapali. Lutfen baska bir saat secin."}, HTTPStatus.CONFLICT)
                 return
-            cursor = db.execute(
-                """
-                INSERT INTO appointments
-                (first_name, last_name, phone, email, pet_type, pet_name, service, appt_date, appt_time, notes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    data["first_name"].strip(),
-                    data["last_name"].strip(),
-                    data["phone"],
-                    data.get("email", "").strip(),
-                    data["pet_type"].strip(),
-                    data.get("pet_name", "").strip(),
-                    data["service"].strip(),
-                    data["appt_date"],
-                    data["appt_time"],
-                    data.get("notes", "").strip(),
-                    now,
-                ),
-            )
+            try:
+                cursor = db.execute(
+                    """
+                    INSERT INTO appointments
+                    (first_name, last_name, phone, email, pet_type, pet_name, service, appt_date, appt_time, notes, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        data["first_name"].strip(),
+                        data["last_name"].strip(),
+                        data["phone"],
+                        data.get("email", "").strip(),
+                        data["pet_type"].strip(),
+                        data.get("pet_name", "").strip(),
+                        data["service"].strip(),
+                        data["appt_date"],
+                        data["appt_time"],
+                        data.get("notes", "").strip(),
+                        now,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                if "DUPLICATE_APPOINTMENT_SLOT" in str(exc):
+                    self.send_json({"error": "Bu randevu saati dolu. Lutfen baska bir saat secin."}, HTTPStatus.CONFLICT)
+                    return
+                raise
             appointment_id = cursor.lastrowid
             self.create_reminder_rows(db, appointment_id, data)
             db.commit()

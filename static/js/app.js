@@ -497,8 +497,10 @@ function applyAppointmentMemberMode(){
   const isMember=!!userToken && !!currentUser;
   const note=document.getElementById('apptMemberNote');
   const personal=document.getElementById('apptPersonalFields');
+  const petBox=document.getElementById('apptPetBox');
   if(note)note.style.display=isMember ? 'block' : 'none';
   if(personal)personal.style.display=isMember ? 'none' : 'block';
+  if(petBox)petBox.style.display=isMember ? 'block' : 'none';
   if(isMember){
     const name=splitFullName(currentUser.full_name);
     document.getElementById('fn').value=name.first;
@@ -507,7 +509,25 @@ function applyAppointmentMemberMode(){
     document.getElementById('em').value=currentUser.email || '';
     if(!document.getElementById('pt').value)document.getElementById('pt').value='Diğer';
     if(!document.getElementById('sv').value)document.getElementById('sv').value='Genel Muayene';
+    renderAppointmentPetSelect();
   }
+}
+function renderAppointmentPetSelect(){
+  // Profilde kayıtlı hayvan varsa randevuda hızlı seçim listesi gösterir.
+  const select=document.getElementById('apptPetSelect');
+  if(!select)return;
+  const pets=PROFILE.pets || [];
+  select.innerHTML='<option value="">Kayıtlı hayvan seçmeden devam et</option>'+pets.map(p=>`<option value="${p.id}">${p.name} - ${p.species}</option>`).join('');
+}
+function selectAppointmentPet(){
+  const id=Number(document.getElementById('apptPetSelect')?.value || 0);
+  const pet=(PROFILE.pets || []).find(item=>Number(item.id)===id);
+  if(!pet)return;
+  document.getElementById('pn').value=pet.name || '';
+  const species=pet.species || 'Diğer';
+  const select=document.getElementById('pt');
+  const hasOption=[...select.options].some(option=>option.value===species || option.textContent===species);
+  select.value=hasOption ? species : 'Diğer';
 }
 async function loadAppointmentSlots(){
   // Seçilen güne göre dolu/kapalı randevu saatlerini backendden alır.
@@ -814,7 +834,14 @@ function go(id){
   if(page){page.classList.add('on');window.scrollTo(0,0);}
   if(navMap[id]){document.getElementById(navMap[id]).classList.add('on');}
   if(id==='profile'){loadProfile().catch(e=>toast(e.message || 'Profil yüklenemedi','err'));}
-  if(id==='appt'){applyAppointmentMemberMode();loadAppointmentSlots();}
+  if(id==='appt'){
+    if(currentUser && !PROFILE.user){
+      loadProfile().then(()=>applyAppointmentMemberMode()).catch(()=>applyAppointmentMemberMode());
+    }else{
+      applyAppointmentMemberMode();
+    }
+    loadAppointmentSlots();
+  }
 }
 
 // ── İlk yükleme ───────────────────────────────────────────────────────────────
