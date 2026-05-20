@@ -41,6 +41,10 @@ DB_PATH = ROOT / "data" / "gumus_veteriner.db"
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 5000))
 JWT_SECRET = os.environ.get("JWT_SECRET", "gumus-veteriner-change-this-secret")
+DEFAULT_APPOINTMENT_TIMES = [
+    "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
+    "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30",
+]
 
 # Railway ve Gunicorn bu degiskeni arar: `gunicorn app:app`.
 app = Flask(__name__, static_folder=None)
@@ -171,6 +175,16 @@ def init_db() -> None:
                 status TEXT NOT NULL DEFAULT 'pending',
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(appointment_id) REFERENCES appointments(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS appointment_slots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                appt_date TEXT NOT NULL,
+                appt_time TEXT NOT NULL,
+                is_available INTEGER NOT NULL DEFAULT 1,
+                note TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(appt_date, appt_time)
             );
 
             CREATE TABLE IF NOT EXISTS admins (
@@ -360,7 +374,88 @@ def validate_appointment(data: dict) -> dict:
         raise ValueError("Gecmis tarih secilemez")
     if selected > date.today() + timedelta(days=60):
         raise ValueError("En fazla 60 gun ileriye randevu alinabilir")
+    if not re.fullmatch(r"\d{2}:\d{2}", str(data.get("appt_time", ""))):
+        raise ValueError("Saat HH:MM formatinda olmali")
     return data
+
+
+def apply_member_appointment_defaults(data: dict, user: sqlite3.Row | None) -> dict:
+    """Uye girisi varsa randevu formunda kisisel bilgileri otomatik tamamlar."""
+    if not user:
+        return data
+    prepared = dict(data)
+    full_name = (user["full_name"] or "Uye").strip()
+    parts = full_name.split()
+    prepared["first_name"] = prepared.get("first_name") or (parts[0] if parts else "Uye")
+    prepared["last_name"] = prepared.get("last_name") or (" ".join(parts[1:]) if len(parts) > 1 else "Gumus")
+    prepared["phone"] = prepared.get("phone") or (user["phone"] or "")
+    prepared["email"] = prepared.get("email") or (user["email"] or "")
+    prepared["pet_type"] = prepared.get("pet_type") or "Belirtilmedi"
+    prepared["service"] = prepared.get("service") or "Genel Muayene"
+    return prepared
+
+
+def appointment_slot_summary(db: sqlite3.Connection, appt_date: str) -> list[dict]:
+    """Bir gun icin MHRS benzeri bos/dolu/kapali saat listesini hazirlar."""
+    slots = {
+        row["appt_time"]: row
+        for row in db.execute(
+            "SELECT * FROM appointment_slots WHERE appt_date = ?",
+            (appt_date,),
+        ).fetchall()
+    }
+    taken = {
+        row["appt_time"]
+        for row in db.execute(
+            """
+            SELECT appt_time FROM appointments
+            WHERE appt_date = ? AND status NOT IN ('cancelled')
+            """,
+            (appt_date,),
+        ).fetchall()
+    }
+    explicit_times = sorted(set(slots) - set(DEFAULT_APPOINTMENT_TIMES))
+    rows = []
+    for appt_time in [*DEFAULT_APPOINTMENT_TIMES, *explicit_times]:
+        slot = slots.get(appt_time)
+        blocked = bool(slot and not slot["is_available"])
+        is_taken = appt_time in taken
+        rows.append(
+            {
+                "date": appt_date,
+                "time": appt_time,
+                "available": not blocked and not is_taken,
+                "taken": is_taken,
+                "blocked": blocked,
+                "note": slot["note"] if slot else "",
+            }
+        )
+    return rows
+
+
+def is_appointment_time_available(db: sqlite3.Connection, appt_date: str, appt_time: str) -> bool:
+    """Ayni tarih/saat icin ikinci aktif randevuyu engeller."""
+    rows = appointment_slot_summary(db, appt_date)
+    match = next((row for row in rows if row["time"] == appt_time), None)
+    return bool(match and match["available"])
+
+
+def get_request_session_user() -> sqlite3.Row | None:
+    """Flask route'larinda Authorization token'i ile uye bilgisini bulur."""
+    auth = request.headers.get("Authorization", "")
+    token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+    if not token:
+        return None
+    with connect() as db:
+        return db.execute(
+            """
+            SELECT users.id, users.full_name, users.email, users.phone, users.role, users.created_at, users.is_banned
+            FROM sessions
+            JOIN users ON users.id = sessions.user_id
+            WHERE sessions.token = ?
+            """,
+            (token,),
+        ).fetchone()
 
 
 def api_response(success: bool, message: str, data=None, status: HTTPStatus = HTTPStatus.OK):
@@ -451,6 +546,9 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/appointments":
             self.create_appointment()
+            return
+        if parsed.path == "/api/reviews":
+            self.create_purchase_review()
             return
         if parsed.path == "/api/orders":
             self.create_order()
@@ -680,13 +778,17 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
     def create_appointment(self) -> None:
         """Online randevu formunu kaydeder ve hatirlatma kayitlarini olusturur."""
         try:
-            data = validate_appointment(self.read_json())
+            user = self.get_session_user()
+            data = validate_appointment(apply_member_appointment_defaults(self.read_json(), user))
         except (json.JSONDecodeError, ValueError) as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
 
         now = datetime.now().isoformat(timespec="seconds")
         with connect() as db:
+            if not is_appointment_time_available(db, data["appt_date"], data["appt_time"]):
+                self.send_json({"error": "Bu randevu saati dolu veya kapali. Lutfen baska bir saat secin."}, HTTPStatus.CONFLICT)
+                return
             cursor = db.execute(
                 """
                 INSERT INTO appointments
@@ -711,6 +813,44 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             self.create_reminder_rows(db, appointment_id, data)
             db.commit()
             row = db.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
+        self.send_json(row_to_dict(row), HTTPStatus.CREATED)
+
+    def create_purchase_review(self) -> None:
+        """Sadece daha once siparis olusturan uyelerin yorum eklemesini saglar."""
+        user = self.require_user()
+        if not user:
+            return
+        try:
+            data = self.read_json()
+            rating = int(data.get("rating") or 5)
+        except (json.JSONDecodeError, ValueError):
+            self.send_json({"error": "Gecersiz yorum verisi"}, HTTPStatus.BAD_REQUEST)
+            return
+        message = (data.get("message") or "").strip()
+        pet_type = (data.get("pet_type") or "Hasta Sahibi").strip()
+        if rating < 1 or rating > 5:
+            self.send_json({"error": "Puan 1 ile 5 arasinda olmali"}, HTTPStatus.BAD_REQUEST)
+            return
+        if len(message) < 8:
+            self.send_json({"error": "Yorum en az 8 karakter olmali"}, HTTPStatus.BAD_REQUEST)
+            return
+        if len(message) > 500:
+            self.send_json({"error": "Yorum en fazla 500 karakter olabilir"}, HTTPStatus.BAD_REQUEST)
+            return
+        with connect() as db:
+            purchased = db.execute("SELECT COUNT(*) FROM orders WHERE user_id = ?", (user["id"],)).fetchone()[0]
+            if purchased < 1:
+                self.send_json({"error": "Yorum yapabilmek icin once satin alma yapmis olmalisiniz."}, HTTPStatus.FORBIDDEN)
+                return
+            cursor = db.execute(
+                """
+                INSERT INTO site_reviews (author, pet_type, rating, message, reply, active, created_at)
+                VALUES (?, ?, ?, ?, '', 1, ?)
+                """,
+                (user["full_name"], pet_type, rating, message, datetime.now().isoformat(timespec="seconds")),
+            )
+            db.commit()
+            row = db.execute("SELECT * FROM site_reviews WHERE id = ?", (cursor.lastrowid,)).fetchone()
         self.send_json(row_to_dict(row), HTTPStatus.CREATED)
 
     def create_reminder_rows(self, db: sqlite3.Connection, appointment_id: int, data: dict) -> None:
@@ -1181,6 +1321,52 @@ def api_site_content():
     return api_response(True, "Site içeriği listelendi", data)
 
 
+@app.route("/api/appointment-slots", methods=["GET"])
+def api_appointment_slots():
+    appt_date = (request.args.get("date") or "").strip()
+    try:
+        datetime.strptime(appt_date, "%Y-%m-%d")
+    except ValueError:
+        return api_response(False, "Tarih YYYY-MM-DD formatında olmalı", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        rows = appointment_slot_summary(db, appt_date)
+    return api_response(True, "Randevu saatleri listelendi", rows)
+
+
+@app.route("/api/reviews", methods=["POST"])
+def api_purchase_review():
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+    pet_type = (data.get("pet_type") or "Hasta Sahibi").strip()
+    try:
+        rating = int(data.get("rating") or 5)
+    except (TypeError, ValueError):
+        return api_response(False, "Puan geçersiz", None, HTTPStatus.BAD_REQUEST)
+    if rating < 1 or rating > 5:
+        return api_response(False, "Puan 1 ile 5 arasında olmalı", None, HTTPStatus.BAD_REQUEST)
+    if len(message) < 8:
+        return api_response(False, "Yorum en az 8 karakter olmalı", None, HTTPStatus.BAD_REQUEST)
+    if len(message) > 500:
+        return api_response(False, "Yorum en fazla 500 karakter olabilir", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        purchased = db.execute("SELECT COUNT(*) FROM orders WHERE user_id = ?", (user["id"],)).fetchone()[0]
+        if purchased < 1:
+            return api_response(False, "Yorum yapabilmek için önce satın alma yapmış olmalısınız.", None, HTTPStatus.FORBIDDEN)
+        cursor = db.execute(
+            """
+            INSERT INTO site_reviews (author, pet_type, rating, message, reply, active, created_at)
+            VALUES (?, ?, ?, ?, '', 1, ?)
+            """,
+            (user["full_name"], pet_type, rating, message, datetime.now().isoformat(timespec="seconds")),
+        )
+        db.commit()
+        row = db.execute("SELECT * FROM site_reviews WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return api_response(True, "Yorumunuz yayınlandı", row_to_dict(row), HTTPStatus.CREATED)
+
+
 @app.route("/api/admin/site-texts", methods=["GET"])
 @require_admin_api
 def api_admin_site_texts():
@@ -1237,6 +1423,49 @@ def api_admin_reviews_update(review_id: int):
     if not row:
         return api_response(False, "Yorum bulunamadı", None, HTTPStatus.NOT_FOUND)
     return api_response(True, "Yorum güncellendi", row_to_dict(row))
+
+
+@app.route("/api/admin/appointment-slots", methods=["GET"])
+@require_admin_api
+def api_admin_appointment_slots():
+    appt_date = (request.args.get("date") or date.today().isoformat()).strip()
+    try:
+        datetime.strptime(appt_date, "%Y-%m-%d")
+    except ValueError:
+        return api_response(False, "Tarih YYYY-MM-DD formatında olmalı", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        rows = appointment_slot_summary(db, appt_date)
+    return api_response(True, "Randevu saatleri listelendi", rows)
+
+
+@app.route("/api/admin/appointment-slots", methods=["POST", "PATCH"])
+@require_admin_api
+def api_admin_appointment_slots_update():
+    data = request.get_json(silent=True) or {}
+    appt_date = (data.get("date") or data.get("appt_date") or "").strip()
+    appt_time = (data.get("time") or data.get("appt_time") or "").strip()
+    try:
+        datetime.strptime(appt_date, "%Y-%m-%d")
+    except ValueError:
+        return api_response(False, "Tarih YYYY-MM-DD formatında olmalı", None, HTTPStatus.BAD_REQUEST)
+    if not re.fullmatch(r"\d{2}:\d{2}", appt_time):
+        return api_response(False, "Saat HH:MM formatında olmalı", None, HTTPStatus.BAD_REQUEST)
+    is_available = 1 if data.get("is_available", True) else 0
+    note = (data.get("note") or "").strip()
+    now = datetime.now().isoformat(timespec="seconds")
+    with connect() as db:
+        db.execute(
+            """
+            INSERT INTO appointment_slots (appt_date, appt_time, is_available, note, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(appt_date, appt_time)
+            DO UPDATE SET is_available = excluded.is_available, note = excluded.note
+            """,
+            (appt_date, appt_time, is_available, note, now),
+        )
+        db.commit()
+        rows = appointment_slot_summary(db, appt_date)
+    return api_response(True, "Randevu saati güncellendi", rows)
 
 
 @app.route("/api/admin/users", methods=["GET"])

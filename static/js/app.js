@@ -488,7 +488,52 @@ function initWhatsAppBubble(){
 }
 
 // ── Randevu gönder ────────────────────────────────────────────────────────────
+function splitFullName(fullName){
+  const parts=String(fullName || 'Üye Gumus').trim().split(/\s+/).filter(Boolean);
+  return {first:parts[0] || 'Üye', last:parts.slice(1).join(' ') || 'Gumus'};
+}
+function applyAppointmentMemberMode(){
+  // Üye girişinde kişisel alanları gizler; backend yine üyeden gelen bilgileri doğrular.
+  const isMember=!!userToken && !!currentUser;
+  const note=document.getElementById('apptMemberNote');
+  const personal=document.getElementById('apptPersonalFields');
+  if(note)note.style.display=isMember ? 'block' : 'none';
+  if(personal)personal.style.display=isMember ? 'none' : 'block';
+  if(isMember){
+    const name=splitFullName(currentUser.full_name);
+    document.getElementById('fn').value=name.first;
+    document.getElementById('ln').value=name.last;
+    document.getElementById('ph').value=currentUser.phone || '';
+    document.getElementById('em').value=currentUser.email || '';
+    if(!document.getElementById('pt').value)document.getElementById('pt').value='Diğer';
+    if(!document.getElementById('sv').value)document.getElementById('sv').value='Genel Muayene';
+  }
+}
+async function loadAppointmentSlots(){
+  // Seçilen güne göre dolu/kapalı randevu saatlerini backendden alır.
+  const dateValue=document.getElementById('dt')?.value;
+  const select=document.getElementById('tm');
+  if(!dateValue || !select)return;
+  const current=select.value;
+  select.innerHTML='<option value="">Saatler yükleniyor...</option>';
+  try{
+    const res=await fetch(`/api/appointment-slots?date=${encodeURIComponent(dateValue)}`);
+    const payload=await res.json();
+    if(!res.ok || payload.success===false)throw new Error(payload.message || 'Saatler yüklenemedi.');
+    const rows=payload.data || [];
+    select.innerHTML='<option value="">Seçin...</option>'+rows.map(row=>{
+      const disabled=row.available ? '' : 'disabled';
+      const label=row.available ? row.time : `${row.time} - ${row.taken ? 'Dolu' : 'Kapalı'}`;
+      return `<option value="${row.time}" ${disabled}>${label}</option>`;
+    }).join('');
+    if(rows.some(row=>row.time===current && row.available))select.value=current;
+  }catch(e){
+    select.innerHTML='<option value="">Saatler alınamadı</option>';
+    toast(e.message || 'Saatler yüklenemedi','err');
+  }
+}
 async function submitAppt(){
+  applyAppointmentMemberMode();
   const fn=document.getElementById('fn').value.trim();
   const ln=document.getElementById('ln').value.trim();
   const ph=document.getElementById('ph').value.trim();
@@ -497,10 +542,10 @@ async function submitAppt(){
   const dt=document.getElementById('dt').value;
   const tm=document.getElementById('tm').value;
 
-  if(!fn||!ln){showMsg('apptOk','apptErr','err','Ad ve soyad zorunlu.');return;}
-  if(!validPhone(ph)){showMsg('apptOk','apptErr','err','Geçerli telefon: 05XX XXX XX XX');return;}
-  if(!pt){showMsg('apptOk','apptErr','err','Lütfen hayvan türü seçin.');return;}
-  if(!sv){showMsg('apptOk','apptErr','err','Lütfen hizmet türü seçin.');return;}
+  if(!userToken && (!fn||!ln)){showMsg('apptOk','apptErr','err','Ad ve soyad zorunlu.');return;}
+  if(!userToken && !validPhone(ph)){showMsg('apptOk','apptErr','err','Geçerli telefon: 05XX XXX XX XX');return;}
+  if(!userToken && !pt){showMsg('apptOk','apptErr','err','Lütfen hayvan türü seçin.');return;}
+  if(!userToken && !sv){showMsg('apptOk','apptErr','err','Lütfen hizmet türü seçin.');return;}
   if(!dt||new Date(dt)<new Date().setHours(0,0,0,0)){showMsg('apptOk','apptErr','err','Lütfen gelecek bir tarih seçin.');return;}
   if(!tm){showMsg('apptOk','apptErr','err','Lütfen saat seçin.');return;}
 
@@ -518,13 +563,15 @@ async function submitAppt(){
   try{
     const res = await fetch('/api/appointments',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:authHeaders({'Content-Type':'application/json'}),
       body:JSON.stringify(payload)
     });
     const data = await res.json();
     if(!res.ok){throw new Error(data.error || 'Randevu oluşturulamadı.');}
     showMsg('apptOk','apptErr','ok',`✅ Randevunuz oluşturuldu! Randevu numaranız: #${data.id}`);
     document.getElementById('apptForm').reset();
+    applyAppointmentMemberMode();
+    await loadAppointmentSlots();
   }catch(e){
     showMsg('apptOk','apptErr','err',e.message || 'Sunucu hatası. Lütfen tekrar deneyin veya telefonla arayın.');
   }finally{
@@ -532,6 +579,24 @@ async function submitAppt(){
   }
 }
 
+async function submitPurchaseReview(){
+  // Satın alma yapan üyelerin ana sayfaya yorum bırakmasını sağlar.
+  if(!userToken){go('auth');return;}
+  const payload={
+    rating:Number(document.getElementById('reviewRating').value || 5),
+    pet_type:document.getElementById('reviewPetType').value.trim() || 'Hasta Sahibi',
+    message:document.getElementById('reviewMessage').value.trim()
+  };
+  if(payload.message.length<8){showMsg('reviewOk','reviewErr','err','Yorum en az 8 karakter olmalı.');return;}
+  try{
+    const res=await fetch('/api/reviews',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(!res.ok || data.success===false)throw new Error(data.message || data.error || 'Yorum kaydedilemedi.');
+    showMsg('reviewOk','reviewErr','ok','✅ Yorumunuz yayınlandı.');
+    document.getElementById('reviewForm').reset();
+    await loadSiteContent();
+  }catch(e){showMsg('reviewOk','reviewErr','err',e.message || 'Yorum kaydedilemedi.');}
+}
 // ── Siparişten ödeme sayfasına geçiş ─────────────────────────────────────────
 async function goPayment(){
   // Teslimat bilgilerini kontrol eder; her sey tamamsa odeme sayfasina gecer.
@@ -749,16 +814,20 @@ function go(id){
   if(page){page.classList.add('on');window.scrollTo(0,0);}
   if(navMap[id]){document.getElementById(navMap[id]).classList.add('on');}
   if(id==='profile'){loadProfile().catch(e=>toast(e.message || 'Profil yüklenemedi','err'));}
+  if(id==='appt'){applyAppointmentMemberMode();loadAppointmentSlots();}
 }
 
 // ── İlk yükleme ───────────────────────────────────────────────────────────────
 document.getElementById('dt').min=new Date().toISOString().split('T')[0];
+document.getElementById('dt')?.addEventListener('change',loadAppointmentSlots);
 wireAnimalInputs();
 initWhatsAppBubble();
 updateAuthUI();
+applyAppointmentMemberMode();
 loadProducts();
 loadSiteContent();
 if(currentUser){loadProfile().catch(()=>{});}
 if(location.pathname==='/admin/login' || location.pathname==='/admin')go('home');
 if(location.pathname==='/403')go('forbidden');
 if(new URLSearchParams(location.search).get('route')==='adminLogin')go('home');
+

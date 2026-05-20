@@ -270,6 +270,7 @@ class _AdminShellState extends State<AdminShell> {
       SiteTextPage(api: api),
       UserManagementPage(api: api),
       SendSmsPage(api: api),
+      AppointmentSlotsPage(api: api),
       ClinicSettingsPage(storage: widget.storage),
     ];
     final mobile = MediaQuery.sizeOf(context).width < 820;
@@ -372,6 +373,7 @@ class Sidebar extends StatelessWidget {
       MenuItem(Icons.edit_note_outlined, 'Site Yazıları'),
       MenuItem(Icons.groups_outlined, 'Üyeler'),
       MenuItem(Icons.sms_outlined, 'SMS Gönder'),
+      MenuItem(Icons.schedule_outlined, 'Randevu Saatleri'),
     ];
     return Container(
       width: 245,
@@ -395,8 +397,8 @@ class Sidebar extends StatelessWidget {
           SidebarTile(
             icon: Icons.settings_outlined,
             label: 'Ayarlar & Klinik',
-            active: selected == 10,
-            onTap: () => onSelected(10),
+            active: selected == 11,
+            onTap: () => onSelected(11),
           ),
           SidebarTile(icon: Icons.logout, label: 'Çıkış Yap', active: false, onTap: onLogout),
           const SizedBox(height: 18),
@@ -1697,6 +1699,139 @@ class ErrorState extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class AppointmentSlotsPage extends StatefulWidget {
+  const AppointmentSlotsPage({super.key, required this.api});
+
+  final ApiClient api;
+
+  @override
+  State<AppointmentSlotsPage> createState() => _AppointmentSlotsPageState();
+}
+
+class _AppointmentSlotsPageState extends State<AppointmentSlotsPage> {
+  DateTime selectedDate = DateTime.now();
+  late Future<Map<String, dynamic>> future = loadSlots();
+
+  String get dateValue {
+    final m = selectedDate.month.toString().padLeft(2, '0');
+    final d = selectedDate.day.toString().padLeft(2, '0');
+    return '${selectedDate.year}-$m-$d';
+  }
+
+  Future<Map<String, dynamic>> loadSlots() {
+    return widget.api.request('${AppConstants.appointmentSlotsEndpoint}?date=$dateValue');
+  }
+
+  void reload() => setState(() => future = loadSlots());
+
+  Future<void> pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 60)),
+    );
+    if (picked == null) return;
+    setState(() {
+      selectedDate = picked;
+      future = loadSlots();
+    });
+  }
+
+  Future<void> toggleSlot(Map<String, dynamic> slot, bool enabled) async {
+    await widget.api.request(
+      AppConstants.appointmentSlotsEndpoint,
+      method: 'PATCH',
+      body: {
+        'date': dateValue,
+        'time': slot['time'],
+        'is_available': enabled,
+        'note': enabled ? '' : 'Admin tarafından kapatıldı',
+      },
+    );
+    reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        PageHeader(
+          title: 'Randevu Saatleri',
+          subtitle: 'MHRS mantığıyla gün bazlı saatleri açıp kapatın. Dolu saatler müşteriye kapalı görünür.',
+          action: FilledButton.icon(
+            onPressed: pickDate,
+            icon: const Icon(Icons.calendar_month_outlined),
+            label: Text(dateValue),
+          ),
+        ),
+        Expanded(
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) return ErrorState(message: snapshot.error.toString(), onRetry: reload);
+              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+              final rows = (snapshot.data!['data'] as List).cast<Map<String, dynamic>>();
+              return GridView.builder(
+                padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: MediaQuery.sizeOf(context).width > 1100 ? 4 : 2,
+                  mainAxisExtent: 112,
+                  crossAxisSpacing: 14,
+                  mainAxisSpacing: 14,
+                ),
+                itemCount: rows.length,
+                itemBuilder: (_, index) {
+                  final slot = rows[index];
+                  final taken = slot['taken'] == true;
+                  final blocked = slot['blocked'] == true;
+                  final available = slot['available'] == true;
+                  final color = taken
+                      ? Colors.red
+                      : blocked
+                          ? Colors.blueGrey
+                          : Colors.green;
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: color.withOpacity(.12),
+                            child: Icon(taken ? Icons.lock_clock_outlined : Icons.schedule_outlined, color: color),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(slot['time'].toString(), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                                Text(
+                                  taken ? 'Dolu' : (blocked ? 'Kapalı' : 'Uygun'),
+                                  style: TextStyle(color: color, fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            value: available || taken,
+                            onChanged: taken ? null : (value) => toggleSlot(slot, value),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

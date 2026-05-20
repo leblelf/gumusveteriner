@@ -22,6 +22,7 @@ class AppConstants {
   static const String appointmentsEndpoint = '/api/admin/appointments';
   static const String appointmentsUpdateEndpoint = '/api/admin/appointments/update';
   static const String appointmentsDeleteEndpoint = '/api/admin/appointments/delete';
+  static const String appointmentSlotsEndpoint = '/api/admin/appointment-slots';
   static const String reviewsEndpoint = '/api/admin/reviews';
   static const String reviewsUpdateEndpoint = '/api/admin/reviews/update';
   static const String siteTextsEndpoint = '/api/admin/site-texts';

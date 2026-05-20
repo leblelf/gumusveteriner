@@ -173,6 +173,8 @@
   <div class="sec">
     <div class="info-box" id="site-appointment-info">Randevunuz en geç 2 saat içinde SMS ile onaylanır. İptal için 24 saat önce haber vermeniz yeterli.</div>
     <form id="apptForm" style="max-width:560px" onsubmit="return false">
+      <div class="info-box" id="apptMemberNote" style="display:none">Üye girişi yaptığınız için kişisel bilgileriniz hesabınızdan alınacak. Sadece uygun randevu günü ve saatini seçmeniz yeterli.</div>
+      <div id="apptPersonalFields">
       <div class="frow">
         <div><label>Ad *</label><input type="text" id="fn" placeholder="Adınız"></div>
         <div><label>Soyad *</label><input type="text" id="ln" placeholder="Soyadınız"></div>
@@ -189,6 +191,7 @@
       </div>
       <label>Hizmet *</label>
       <select id="sv"><option value="">Seçin...</option><option>Genel Muayene</option><option>Aşılama</option><option>Diş Bakımı</option><option>Cerrahi Konsültasyon</option><option>Görüntüleme (Röntgen/USG)</option><option>Grooming</option><option>Acil Muayene</option></select>
+      </div>
       <div class="frow">
         <div><label>Tarih *</label><input type="date" id="dt"></div>
         <div><label>Saat *</label>
@@ -368,6 +371,21 @@
       <div class="profile-card">
         <div class="sec-title" style="font-size:1.35rem">Kayıtlı Hayvanlar</div>
         <div class="profile-list" id="petList"><div class="skeleton"></div></div>
+      </div>
+      <div class="profile-card">
+        <div class="sec-title" style="font-size:1.35rem">Satın Alma Yorumu</div>
+        <div class="info-box">Yorum ekleme alanı yalnızca site üzerinden satın alma yapan üyeler içindir. Yorumunuz ana sayfadaki müşteri yorumlarında görünür.</div>
+        <form id="reviewForm" onsubmit="return false">
+          <div class="frow">
+            <div><label>Puan</label><select id="reviewRating"><option value="5">5 yıldız</option><option value="4">4 yıldız</option><option value="3">3 yıldız</option><option value="2">2 yıldız</option><option value="1">1 yıldız</option></select></div>
+            <div><label>Hayvan Türü</label><input type="text" id="reviewPetType" placeholder="Kedi, Köpek..."></div>
+          </div>
+          <label>Yorumunuz</label>
+          <textarea id="reviewMessage" maxlength="500" placeholder="Deneyiminizi kısaca yazın..."></textarea>
+          <button class="btn-submit" type="button" onclick="submitPurchaseReview()">Yorumu Yayınla</button>
+          <div class="msg-ok" id="reviewOk"></div>
+          <div class="msg-err" id="reviewErr"></div>
+        </form>
       </div>
     </div>
   </div>
