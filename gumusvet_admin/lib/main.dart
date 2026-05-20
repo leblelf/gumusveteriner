@@ -39,19 +39,21 @@ class _GumusVetAdminAppState extends State<GumusVetAdminApp> {
 
 ThemeData buildAdminTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final background = dark ? const Color(0xFF0F1513) : const Color(0xFFF3F7FA);
-  final surface = dark ? const Color(0xFF18221F) : Colors.white;
-  final border = dark ? const Color(0xFF2A3934) : const Color(0xFFDDE7ED);
-  final fill = dark ? const Color(0xFF202B27) : const Color(0xFFF7FAFC);
+  final background = dark ? const Color(0xFF07110F) : const Color(0xFFF4F8F6);
+  final surface = dark ? const Color(0xFF101C19) : Colors.white;
+  final border = dark ? const Color(0xFF263A34) : const Color(0xFFE1EEE9);
+  final fill = dark ? const Color(0xFF0D211D) : const Color(0xFFF2FBF8);
+  const siteTeal = Color(0xFF0F6E56);
+  const siteTealMid = Color(0xFF1D9E75);
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
     scaffoldBackgroundColor: background,
     colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xFFFF8A1E),
+      seedColor: siteTeal,
       brightness: brightness,
-      primary: const Color(0xFFFF8A1E),
-      secondary: const Color(0xFF0EB88A),
+      primary: dark ? const Color(0xFF4BD0A7) : siteTeal,
+      secondary: dark ? const Color(0xFFF1B35D) : siteTealMid,
     ),
     fontFamily: 'Arial',
     cardTheme: CardThemeData(
@@ -75,7 +77,7 @@ ThemeData buildAdminTheme(Brightness brightness) {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF0F6E56)),
+        borderSide: BorderSide(color: dark ? const Color(0xFF4BD0A7) : siteTeal),
       ),
     ),
     dividerTheme: DividerThemeData(color: border),
@@ -267,6 +269,7 @@ class _AdminShellState extends State<AdminShell> {
       ProductPage(api: api, query: query),
       OrdersPage(api: api, query: query),
       ReviewReplyPage(api: api, query: query),
+      ContactReplyPage(api: api, query: query),
       SiteTextPage(api: api, query: query),
       UserManagementPage(api: api, query: query),
       SendSmsPage(api: api),
@@ -370,6 +373,7 @@ class Sidebar extends StatelessWidget {
       MenuItem(Icons.inventory_2_outlined, 'Ürünler'),
       MenuItem(Icons.shopping_bag_outlined, 'Gelen Siparişler'),
       MenuItem(Icons.reviews_outlined, 'Yorumlar'),
+      MenuItem(Icons.contact_mail_outlined, 'Sorular'),
       MenuItem(Icons.edit_note_outlined, 'Site Yazıları'),
       MenuItem(Icons.groups_outlined, 'Üyeler'),
       MenuItem(Icons.sms_outlined, 'SMS Gönder'),
@@ -397,8 +401,8 @@ class Sidebar extends StatelessWidget {
           SidebarTile(
             icon: Icons.settings_outlined,
             label: 'Ayarlar & Klinik',
-            active: selected == 11,
-            onTap: () => onSelected(11),
+            active: selected == 12,
+            onTap: () => onSelected(12),
           ),
           SidebarTile(icon: Icons.logout, label: 'Çıkış Yap', active: false, onTap: onLogout),
           const SizedBox(height: 18),
@@ -476,37 +480,52 @@ class BrandHeader extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.pets, color: Color(0xFFF2A02D), size: 34),
-        const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Gümüş Veteriner',
-              style: TextStyle(
-                color: appOrange(context),
-                fontWeight: FontWeight.w800,
-                fontSize: compact ? 20 : 24,
-                height: 1,
+        ClipOval(
+          child: Image.asset(
+            'assets/images/logo.jpeg',
+            width: compact ? 40 : 48,
+            height: compact ? 40 : 48,
+            fit: BoxFit.cover,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Gümüş Veteriner',
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: appOrange(context),
+                    fontWeight: FontWeight.w800,
+                    fontSize: compact ? 18 : 23,
+                    height: 1,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'PET YÖNETİMİ',
-              style: TextStyle(
-                color: const Color(0xFF61737B),
-                fontSize: compact ? 10 : 12,
-                letterSpacing: 1.8,
-                fontWeight: FontWeight.w700,
+              const SizedBox(height: 4),
+              Text(
+                'PET YÖNETİMİ',
+                maxLines: 1,
+                style: TextStyle(
+                  color: appMuted(context),
+                  fontSize: compact ? 9 : 12,
+                  letterSpacing: 1.5,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );
   }
 }
-
 class TopBar extends StatelessWidget {
   const TopBar({
     super.key,
@@ -549,8 +568,8 @@ class TopBar extends StatelessWidget {
             tooltip: isDark ? 'Açık moda geç' : 'Karanlık moda geç',
           ),
           CircleAvatar(
-            backgroundColor: const Color(0xFFFFF0D9),
-            child: Text('Profil'.substring(0, 1), style: const TextStyle(color: Color(0xFFE2871B))),
+            backgroundColor: const Color(0xFFE1F5EE),
+            child: Text('Profil'.substring(0, 1), style: const TextStyle(color: Color(0xFF0F6E56))),
           ),
           const SizedBox(width: 10),
           Column(
@@ -691,8 +710,8 @@ class MetricCard extends StatelessWidget {
           child: Row(
             children: [
               CircleAvatar(
-                backgroundColor: const Color(0xFFFFF1DF),
-                child: Icon(icon, color: const Color(0xFFF29A2A)),
+                backgroundColor: const Color(0xFFE1F5EE),
+                child: Icon(icon, color: const Color(0xFF0F6E56)),
               ),
               const SizedBox(width: 14),
               Column(
@@ -971,7 +990,7 @@ class PetTable extends StatelessWidget {
                           ],
                         )),
                         DataCell(OwnerBadge(pet: pet)),
-                        DataCell(Row(children: [const Icon(Icons.phone_outlined, size: 16, color: Color(0xFFF29A2A)), const SizedBox(width: 8), Text(pet.phone)])),
+                        DataCell(Row(children: [const Icon(Icons.phone_outlined, size: 16, color: Color(0xFF0F6E56)), const SizedBox(width: 8), Text(pet.phone)])),
                         DataCell(PopupMenuButton<String>(
                           onSelected: (value) {
                             if (value == 'detail') onDetail(pet);
@@ -1050,7 +1069,7 @@ class PetIdentity extends StatelessWidget {
             color: const Color(0xFFFFF6E9),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(pet.type == 'Kedi' ? Icons.cruelty_free_outlined : Icons.pets, color: const Color(0xFFF29A2A), size: 18),
+          child: Icon(pet.type == 'Kedi' ? Icons.cruelty_free_outlined : Icons.pets, color: const Color(0xFF0F6E56), size: 18),
         ),
         const SizedBox(width: 12),
         Column(
@@ -1083,7 +1102,7 @@ class OwnerBadge extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.person_outline, size: 15, color: Color(0xFFF29A2A)),
+        const Icon(Icons.person_outline, size: 15, color: Color(0xFF0F6E56)),
         const SizedBox(width: 8),
         Text(pet.owner, style: const TextStyle(fontWeight: FontWeight.w800)),
       ],
@@ -1132,7 +1151,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                   final item = rows[index] as Map<String, dynamic>;
                   return Card(
                     child: ListTile(
-                      leading: const CircleAvatar(backgroundColor: Color(0xFFFFF1DF), child: Icon(Icons.calendar_month_outlined, color: Color(0xFFF29A2A))),
+                      leading: const CircleAvatar(backgroundColor: Color(0xFFE1F5EE), child: Icon(Icons.calendar_month_outlined, color: Color(0xFF0F6E56))),
                       title: Text('${item['first_name']} ${item['last_name']} - ${item['pet_name'] ?? item['pet_type']}'),
                       subtitle: Text('${item['appt_date']} ${item['appt_time']} • ${item['status']}'),
                       trailing: PopupMenuButton<String>(
@@ -1186,7 +1205,7 @@ class HospitalizedPage extends StatelessWidget {
               final item = rows[index];
               return Card(
                 child: ListTile(
-                  leading: const CircleAvatar(backgroundColor: Color(0xFFFFF1DF), child: Icon(Icons.local_hospital_outlined, color: Color(0xFFF29A2A))),
+                  leading: const CircleAvatar(backgroundColor: Color(0xFFE1F5EE), child: Icon(Icons.local_hospital_outlined, color: Color(0xFF0F6E56))),
                   title: Text(item.pet, style: const TextStyle(fontWeight: FontWeight.w800)),
                   subtitle: Text('${item.owner} • ${item.reason}'),
                   trailing: Chip(label: Text(item.room)),
@@ -1360,7 +1379,7 @@ class _CrudListPageState extends State<CrudListPage> {
                   final item = rows[index] as Map<String, dynamic>;
                   return Card(
                     child: ListTile(
-                      leading: const CircleAvatar(backgroundColor: Color(0xFFFFF1DF), child: Icon(Icons.inventory_2_outlined, color: Color(0xFFF29A2A))),
+                      leading: const CircleAvatar(backgroundColor: Color(0xFFE1F5EE), child: Icon(Icons.inventory_2_outlined, color: Color(0xFF0F6E56))),
                       title: Text(item['name']?.toString() ?? '-', style: const TextStyle(fontWeight: FontWeight.w800)),
                       subtitle: Text('${item['category'] ?? 'Genel'} • ₺${item['price'] ?? 0}'),
                       trailing: Wrap(
@@ -1574,6 +1593,7 @@ class _ReviewReplyPageState extends State<ReviewReplyPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text('${item['author']} — ${item['pet_type'] ?? 'Hasta Sahibi'}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                                    Text('Ürün: ${item['product_name'] ?? 'Genel'}', style: TextStyle(color: appMuted(context), fontSize: 12)),
                                     Text(stars, style: const TextStyle(color: Color(0xFFE9B872))),
                                   ],
                                 ),
@@ -1607,6 +1627,126 @@ class _ReviewReplyPageState extends State<ReviewReplyPage> {
                               icon: const Icon(Icons.reply),
                               label: const Text('Yanıtla'),
                             ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class ContactReplyPage extends StatefulWidget {
+  const ContactReplyPage({super.key, required this.api, required this.query});
+
+  final ApiClient api;
+  final String query;
+
+  @override
+  State<ContactReplyPage> createState() => _ContactReplyPageState();
+}
+
+class _ContactReplyPageState extends State<ContactReplyPage> {
+  late Future<Map<String, dynamic>> future = widget.api.request(AppConstants.contactsEndpoint);
+
+  void reload() => setState(() => future = widget.api.request(AppConstants.contactsEndpoint));
+
+  Future<void> replyTo(Map<String, dynamic> contact) async {
+    final reply = TextEditingController(text: contact['reply']?.toString() ?? '');
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('${contact['full_name']} mesajına yanıt'),
+        content: TextField(
+          controller: reply,
+          minLines: 5,
+          maxLines: 9,
+          decoration: const InputDecoration(labelText: 'Mail olarak gönderilecek yanıt'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Vazgeç')),
+          FilledButton(
+            onPressed: () async {
+              final result = await widget.api.request(
+                '${AppConstants.contactsReplyEndpoint}/${contact['id']}',
+                method: 'PATCH',
+                body: {'reply': reply.text.trim()},
+              );
+              if (!mounted) return;
+              Navigator.pop(context);
+              final mail = result['data'] is Map ? (result['data']['mail'] as Map?) : null;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Yanıt kaydedildi. Mail: ${mail?['message'] ?? 'denendi'}')));
+              reload();
+            },
+            child: const Text('Yanıtla ve Mail Gönder'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const PageHeader(title: 'Sorular', subtitle: 'İletişim formundan gelen mesajları yanıtlayın. Yanıtlar müşteriye mail olarak gönderilir.'),
+        Expanded(
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) return ErrorState(message: snapshot.error.toString(), onRetry: reload);
+              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+              final allRows = snapshot.data!['data'] as List;
+              final q = widget.query.trim().toLowerCase();
+              final rows = q.isEmpty ? allRows : allRows.where((item) => (item as Map<String, dynamic>).values.join(' ').toLowerCase().contains(q)).toList();
+              if (rows.isEmpty) return const Center(child: Text('Henüz soru yok.'));
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                itemCount: rows.length,
+                itemBuilder: (_, index) {
+                  final item = rows[index] as Map<String, dynamic>;
+                  final hasReply = (item['reply']?.toString() ?? '').isNotEmpty;
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              CircleAvatar(backgroundColor: appOrange(context).withOpacity(.12), child: Icon(Icons.contact_mail_outlined, color: appOrange(context))),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(item['full_name']?.toString() ?? '-', style: const TextStyle(fontWeight: FontWeight.w800)),
+                                    Text('${item['email'] ?? '-'} • ${item['subject'] ?? 'Genel'}', style: TextStyle(color: appMuted(context))),
+                                  ],
+                                ),
+                              ),
+                              Chip(label: Text(hasReply ? 'Yanıtlandı' : 'Bekliyor')),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(item['message']?.toString() ?? ''),
+                          if (hasReply)
+                            Container(
+                              margin: const EdgeInsets.only(top: 12),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(color: appBackground(context), borderRadius: BorderRadius.circular(12)),
+                              child: Text('Yanıt: ${item['reply']}'),
+                            ),
+                          const SizedBox(height: 10),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: FilledButton.icon(onPressed: () => replyTo(item), icon: const Icon(Icons.reply), label: const Text('Yanıt Ver')),
                           ),
                         ],
                       ),

@@ -16,6 +16,7 @@ let userToken = localStorage.getItem('gvUserToken') || '';
 let adminToken = localStorage.getItem('gvAdminToken') || '';
 let PROFILE = {addresses:[], pets:[]};
 let PENDING_ORDER = null;
+let SITE_REVIEWS = [];
 document.documentElement.dataset.theme=localStorage.getItem('gvTheme') || 'light';
 
 window.addEventListener('load',()=>setTimeout(()=>document.getElementById('loader').classList.add('done'),650));
@@ -103,7 +104,9 @@ async function loadSiteContent(){
         if(el)el.textContent=texts[key];
       }
     });
-    renderSiteReviews(payload.data.reviews || []);
+    SITE_REVIEWS = payload.data.reviews || [];
+    renderSiteReviews(SITE_REVIEWS);
+    renderAllSiteReviews(SITE_REVIEWS);
   }catch(e){}
 }
 
@@ -113,11 +116,23 @@ function renderSiteReviews(reviews){
   wrap.innerHTML=reviews.slice(0,6).map(item=>{
     const rating=Math.max(0,Math.min(5,Number(item.rating||5)));
     const stars='★'.repeat(rating)+'☆'.repeat(5-rating);
+    const product=item.product_name && item.product_name!=='Genel' ? `<div class="tag" style="margin-bottom:.55rem">${item.product_name}</div>` : '';
     const reply=item.reply ? `<div class="info-box" style="margin-top:.8rem;padding:.75rem;font-size:13px"><strong>Gümüş Veteriner:</strong> ${item.reply}</div>` : '';
-    return `<div class="rc"><div class="stars">${stars}</div><blockquote>"${item.message}"</blockquote>${reply}<cite>${item.author} — ${item.pet_type || 'Hasta Sahibi'}</cite></div>`;
+    return `<div class="rc"><div class="stars">${stars}</div>${product}<blockquote>"${item.message}"</blockquote>${reply}<cite>${item.author} — ${item.pet_type || 'Hasta Sahibi'}</cite></div>`;
   }).join('');
 }
-
+function renderAllSiteReviews(reviews){
+  const wrap=document.getElementById('all-site-reviews');
+  if(!wrap)return;
+  if(!reviews.length){wrap.innerHTML='<div class="info-box">Henüz yorum yok.</div>';return;}
+  wrap.innerHTML=reviews.map(item=>{
+    const rating=Math.max(0,Math.min(5,Number(item.rating||5)));
+    const stars='★'.repeat(rating)+'☆'.repeat(5-rating);
+    const product=item.product_name ? `<div class="tag" style="margin-bottom:.55rem">${item.product_name}</div>` : '<div class="tag" style="margin-bottom:.55rem">Genel</div>';
+    const reply=item.reply ? `<div class="info-box" style="margin-top:.8rem;padding:.75rem;font-size:13px"><strong>Gümüş Veteriner:</strong> ${item.reply}</div>` : '';
+    return `<div class="rc"><div class="stars">${stars}</div>${product}<blockquote>"${item.message}"</blockquote>${reply}<cite>${item.author} — ${item.pet_type || 'Hasta Sahibi'}</cite></div>`;
+  }).join('');
+}
 let cart = {};  // {id: {product, qty}}
 
 // ── Sepet işlemleri ──────────────────────────────────────────────────────────
@@ -296,7 +311,17 @@ async function loadProfile(){
   if(!res.ok){throw new Error(data.error || 'Profil yüklenemedi.');}
   PROFILE=data;
   renderProfile();
+  loadPurchasedProducts().catch(()=>{});
   return data;
+}
+async function loadPurchasedProducts(){
+  const select=document.getElementById('reviewProduct');
+  if(!select || !userToken)return;
+  const res=await fetch('/api/profile/purchased-products',{headers:authHeaders()});
+  const payload=await res.json();
+  if(!res.ok || payload.success===false)return;
+  const products=payload.data || [];
+  select.innerHTML='<option value="Genel">Genel klinik yorumu</option>'+products.map(p=>`<option value="${escAttr(p.name)}">${p.name}</option>`).join('');
 }
 async function submitAddress(){
   if(!userToken && !adminToken){go('auth');return;}
@@ -621,6 +646,7 @@ async function submitPurchaseReview(){
   const payload={
     rating:Number(document.getElementById('reviewRating').value || 5),
     pet_type:document.getElementById('reviewPetType').value.trim() || 'Hasta Sahibi',
+    product_name:document.getElementById('reviewProduct').value || 'Genel',
     message:document.getElementById('reviewMessage').value.trim()
   };
   if(payload.message.length<8){showMsg('reviewOk','reviewErr','err','Yorum en az 8 karakter olmalı.');return;}
@@ -836,7 +862,7 @@ async function submitRegister(){
 }
 
 // -- Sayfa navigasyon ---------------------------------------------------------
-const pageMap={home:'page-home',about:'page-about',services:'page-services',shop:'page-shop',appt:'page-appt',blog:'page-blog',contact:'page-contact',auth:'page-auth',profile:'page-profile',forbidden:'page-403',order:'page-order',payment:'page-payment'};
+const pageMap={home:'page-home',about:'page-about',services:'page-services',shop:'page-shop',appt:'page-appt',blog:'page-blog',contact:'page-contact',auth:'page-auth',profile:'page-profile',reviews:'page-reviews',forbidden:'page-403',order:'page-order',payment:'page-payment'};
 const navMap={home:'nb-home',about:'nb-about',services:'nb-services',shop:'nb-shop',blog:'nb-blog',contact:'nb-contact',auth:'nb-auth',profile:'nb-profile'};
 function go(id){
   // Tek sayfa uygulamada sayfalar arasi gecisleri yoneten ana fonksiyon.

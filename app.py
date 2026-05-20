@@ -153,6 +153,8 @@ def init_db() -> None:
                 email TEXT NOT NULL,
                 subject TEXT,
                 message TEXT NOT NULL,
+                reply TEXT,
+                replied_at TEXT,
                 created_at TEXT NOT NULL
             );
 
@@ -245,6 +247,7 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 author TEXT NOT NULL,
                 pet_type TEXT,
+                product_name TEXT,
                 rating INTEGER NOT NULL DEFAULT 5,
                 message TEXT NOT NULL,
                 reply TEXT,
@@ -260,6 +263,9 @@ def init_db() -> None:
         ensure_column(db, "orders", "user_id", "INTEGER")
         ensure_column(db, "orders", "payment_last4", "TEXT")
         ensure_column(db, "orders", "payment_status", "TEXT")
+        ensure_column(db, "contacts", "reply", "TEXT")
+        ensure_column(db, "contacts", "replied_at", "TEXT")
+        ensure_column(db, "site_reviews", "product_name", "TEXT")
         db.commit()
 
 
@@ -917,6 +923,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             return
         message = (data.get("message") or "").strip()
         pet_type = (data.get("pet_type") or "Hasta Sahibi").strip()
+        product_name = (data.get("product_name") or "Genel").strip()
         if rating < 1 or rating > 5:
             self.send_json({"error": "Puan 1 ile 5 arasinda olmali"}, HTTPStatus.BAD_REQUEST)
             return
@@ -933,10 +940,10 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 return
             cursor = db.execute(
                 """
-                INSERT INTO site_reviews (author, pet_type, rating, message, reply, active, created_at)
-                VALUES (?, ?, ?, ?, '', 1, ?)
+                INSERT INTO site_reviews (author, pet_type, product_name, rating, message, reply, active, created_at)
+                VALUES (?, ?, ?, ?, ?, '', 1, ?)
                 """,
-                (user["full_name"], pet_type, rating, message, datetime.now().isoformat(timespec="seconds")),
+                (user["full_name"], pet_type, product_name, rating, message, datetime.now().isoformat(timespec="seconds")),
             )
             db.commit()
             row = db.execute("SELECT * FROM site_reviews WHERE id = ?", (cursor.lastrowid,)).fetchone()
@@ -1449,6 +1456,7 @@ def api_purchase_review():
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
     pet_type = (data.get("pet_type") or "Hasta Sahibi").strip()
+    product_name = (data.get("product_name") or "Genel").strip()
     try:
         rating = int(data.get("rating") or 5)
     except (TypeError, ValueError):
@@ -1465,14 +1473,34 @@ def api_purchase_review():
             return api_response(False, "Yorum yapabilmek için önce satın alma yapmış olmalısınız.", None, HTTPStatus.FORBIDDEN)
         cursor = db.execute(
             """
-            INSERT INTO site_reviews (author, pet_type, rating, message, reply, active, created_at)
-            VALUES (?, ?, ?, ?, '', 1, ?)
+            INSERT INTO site_reviews (author, pet_type, product_name, rating, message, reply, active, created_at)
+            VALUES (?, ?, ?, ?, ?, '', 1, ?)
             """,
-            (user["full_name"], pet_type, rating, message, datetime.now().isoformat(timespec="seconds")),
+            (user["full_name"], pet_type, product_name, rating, message, datetime.now().isoformat(timespec="seconds")),
         )
         db.commit()
         row = db.execute("SELECT * FROM site_reviews WHERE id = ?", (cursor.lastrowid,)).fetchone()
     return api_response(True, "Yorumunuz yayınlandı", row_to_dict(row), HTTPStatus.CREATED)
+
+
+@app.route("/api/profile/purchased-products", methods=["GET"])
+def api_profile_purchased_products():
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    with connect() as db:
+        rows = db.execute(
+            """
+            SELECT DISTINCT products.id, products.name
+            FROM orders
+            JOIN order_items ON order_items.order_id = orders.id
+            JOIN products ON products.id = order_items.product_id
+            WHERE orders.user_id = ?
+            ORDER BY products.name
+            """,
+            (user["id"],),
+        ).fetchall()
+    return api_response(True, "Satın alınan ürünler listelendi", [row_to_dict(row) for row in rows])
 
 
 @app.route("/api/admin/site-texts", methods=["GET"])
@@ -1606,6 +1634,41 @@ def api_admin_users():
             ]
             users.append(user)
     return api_response(True, "Üyeler listelendi", users)
+
+
+@app.route("/api/admin/contacts", methods=["GET"])
+@require_admin_api
+def api_admin_contacts():
+    with connect() as db:
+        rows = db.execute("SELECT * FROM contacts ORDER BY id DESC").fetchall()
+    return api_response(True, "İletişim mesajları listelendi", [row_to_dict(row) for row in rows])
+
+
+@app.route("/api/admin/contacts/reply/<int:contact_id>", methods=["PATCH", "PUT"])
+@require_admin_api
+def api_admin_contacts_reply(contact_id: int):
+    data = request.get_json(silent=True) or {}
+    reply = (data.get("reply") or "").strip()
+    if len(reply) < 5:
+        return api_response(False, "Yanıt en az 5 karakter olmalı", None, HTTPStatus.BAD_REQUEST)
+    now = datetime.now().isoformat(timespec="seconds")
+    with connect() as db:
+        contact = db.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,)).fetchone()
+        if not contact:
+            return api_response(False, "Mesaj bulunamadı", None, HTTPStatus.NOT_FOUND)
+        db.execute("UPDATE contacts SET reply = ?, replied_at = ? WHERE id = ?", (reply, now, contact_id))
+        db.commit()
+        updated = row_to_dict(db.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,)).fetchone())
+    subject = f"Gümüş Veteriner yanıtı: {updated.get('subject') or 'İletişim mesajınız'}"
+    body = (
+        f"Merhaba {updated.get('full_name', '')},\n\n"
+        f"Mesajınız:\n{updated.get('message', '')}\n\n"
+        f"Yanıtımız:\n{reply}\n\n"
+        "Gümüş Veteriner Muayenehanesi\n0546 136 14 33"
+    )
+    mail_result = send_email(updated.get("email", ""), subject, body)
+    updated["mail"] = {"success": mail_result.success, "message": mail_result.message}
+    return api_response(True, "Yanıt kaydedildi ve mail gönderimi denendi", updated)
 
 
 @app.route("/api/admin/users/update/<int:user_id>", methods=["PATCH", "PUT"])

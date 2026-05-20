@@ -47,7 +47,7 @@
   <button class="nb" id="nb-contact"  onclick="go('contact')">İletişim</button>
   <button class="nb" id="nb-auth" onclick="go('auth')">Giriş Yap</button>
   <button class="nb profile-only" id="nb-profile" onclick="go('profile')">Profil</button>
-  <span class="nav-user" id="nav-user"></span>
+  <button class="nav-user" id="nav-user" type="button" onclick="go('profile')"></button>
   <button class="nb" id="logoutBtn" style="display:none" onclick="logout()">Çıkış</button>
   <button class="theme-toggle" type="button" onclick="toggleTheme()" title="Tema değiştir">◐</button>
   <button class="nb" onclick="openCart()">🛒 Sepet <span class="cart-badge" id="cart-count">0</span></button>
@@ -114,6 +114,16 @@
       <div class="rc"><div class="stars">★★★★★</div><blockquote>"Köpeğimiz Max'in ameliyatı için çok endişeliydik. Ekip bize her adımda bilgi verdi, mükemmel sonuç."</blockquote><cite>Mehmet T. — Köpek Sahibi</cite></div>
       <div class="rc"><div class="stars">★★★★☆</div><blockquote>"Online randevu sistemi çok kullanışlı. Bekleme süresi kısa, klinik pırıl pırıl temiz."</blockquote><cite>Zeynep A. — Tavşan Sahibi</cite></div>
     </div>
+    <div style="text-align:center;margin-top:1.5rem">
+      <button class="btn-w" style="background:var(--teal);color:#fff;padding:10px 28px;border-radius:24px;border:none;font-size:14px;font-weight:500;cursor:pointer;font-family:'Outfit',sans-serif" onclick="go('reviews')">Tüm Yorumları Gör</button>
+    </div>
+  </div>
+</div>
+
+<div class="page" id="page-reviews">
+  <div class="page-top"><h2>Tüm Müşteri Yorumları</h2><p>Satın alma yapan üyelerimizin ürün ve klinik deneyimleri</p></div>
+  <div class="sec">
+    <div class="g3" id="all-site-reviews"></div>
   </div>
 </div>
 
@@ -390,6 +400,8 @@
             <div><label>Puan</label><select id="reviewRating"><option value="5">5 yıldız</option><option value="4">4 yıldız</option><option value="3">3 yıldız</option><option value="2">2 yıldız</option><option value="1">1 yıldız</option></select></div>
             <div><label>Hayvan Türü</label><input type="text" id="reviewPetType" placeholder="Kedi, Köpek..."></div>
           </div>
+          <label>Hangi ürün için?</label>
+          <select id="reviewProduct"><option value="Genel">Genel klinik yorumu</option></select>
           <label>Yorumunuz</label>
           <textarea id="reviewMessage" maxlength="500" placeholder="Deneyiminizi kısaca yazın..."></textarea>
           <button class="btn-submit" type="button" onclick="submitPurchaseReview()">Yorumu Yayınla</button>
