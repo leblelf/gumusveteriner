@@ -41,6 +41,12 @@ DB_PATH = ROOT / "data" / "gumus_veteriner.db"
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 5000))
 JWT_SECRET = os.environ.get("JWT_SECRET", "gumus-veteriner-change-this-secret")
+DEPLOY_VERSION = (
+    os.environ.get("RENDER_GIT_COMMIT")
+    or os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+    or os.environ.get("GIT_COMMIT")
+    or "local"
+)[:12]
 DEFAULT_APPOINTMENT_TIMES = [
     "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
     "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30",
@@ -1326,7 +1332,7 @@ def handle_unexpected_error(error):
 @app.route("/403")
 def serve_app_index() -> str:
     # Tum tek sayfa uygulama route'lari ayni index.html dosyasini kullanir.
-    return render_template("index.html")
+    return render_template("index.html", asset_version=DEPLOY_VERSION)
 
 
 @app.route("/health")
@@ -1338,6 +1344,25 @@ def health() -> tuple[str, int]:
 @app.route("/api/health")
 def api_health():
     return api_response(True, "API çalışıyor", {})
+
+
+@app.route("/api/deploy-info")
+def api_deploy_info():
+    """Render/GitHub deployunun hangi surumu calistirdigini test etmek icin."""
+    data = {
+        "version": DEPLOY_VERSION,
+        "service": os.environ.get("RENDER_SERVICE_NAME", ""),
+        "branch": os.environ.get("RENDER_GIT_BRANCH", "main"),
+        "environment": "render" if os.environ.get("RENDER") else "local",
+        "features": [
+            "appointment_slots",
+            "purchase_reviews",
+            "admin_sms",
+            "admin_apis",
+            "member_pet_select",
+        ],
+    }
+    return api_response(True, "Deploy bilgisi", data)
 
 
 @app.route("/api/site/content", methods=["GET"])

@@ -23,7 +23,7 @@
 <meta name="description" content="Gümüş Veteriner için online randevu, ürün siparişi ve klinik yönetim sistemi.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="/static/css/style.css?v={{ asset_version|default('local') }}">
 </head>
 <body>
 <div class="loader" id="loader"><div class="loader-card"><img src="/logo.jpeg" alt="Gümüş Veteriner"><strong>Gümüş Veteriner</strong><small>Yükleniyor...</small></div></div>
@@ -517,6 +517,6 @@
   </div>
 </footer>
 
-<script src="/static/js/app.js"></script>
+<script src="/static/js/app.js?v={{ asset_version|default('local') }}"></script>
 </body>
 </html>
