@@ -48,6 +48,7 @@ DEPLOY_VERSION = (
     or os.environ.get("GIT_COMMIT")
     or "local"
 )[:12]
+SITE_URL = "https://wwwgumusvet.com"
 DEFAULT_APPOINTMENT_TIMES = [
     "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
     "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30",
@@ -1422,6 +1423,44 @@ def api_deploy_info():
         ],
     }
     return api_response(True, "Deploy bilgisi", data)
+
+
+@app.route("/robots.txt")
+def robots_txt() -> Response:
+    """Arama motorlarina tarama izni ve sitemap adresini bildirir."""
+    content = f"""User-agent: *
+Allow: /
+
+Sitemap: {SITE_URL}/sitemap.xml
+"""
+    return Response(content, content_type="text/plain; charset=utf-8")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml() -> Response:
+    """Google ve diger arama motorlari icin temel site haritasi uretir."""
+    today = date.today().isoformat()
+    urls = [
+        (SITE_URL, "1.0", "weekly"),
+        (f"{SITE_URL}/hizmetler", "0.8", "weekly"),
+        (f"{SITE_URL}/urunler", "0.8", "weekly"),
+        (f"{SITE_URL}/iletisim", "0.7", "monthly"),
+    ]
+    url_nodes = "\n".join(
+        f"""  <url>
+    <loc>{loc}</loc>
+    <lastmod>{today}</lastmod>
+    <changefreq>{changefreq}</changefreq>
+    <priority>{priority}</priority>
+  </url>"""
+        for loc, priority, changefreq in urls
+    )
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{url_nodes}
+</urlset>
+"""
+    return Response(content, content_type="application/xml; charset=utf-8")
 
 
 @app.route("/api/site/content", methods=["GET"])
