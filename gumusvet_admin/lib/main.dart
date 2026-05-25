@@ -302,8 +302,6 @@ class _AdminShellState extends State<AdminShell> {
     final content = Column(
       children: [
         TopBar(
-          query: query,
-          onQueryChanged: (value) => setState(() => query = value),
           onLogout: logout,
           isDark: widget.themeMode == ThemeMode.dark,
           onToggleTheme: widget.onToggleTheme,
@@ -569,15 +567,11 @@ class BrandHeader extends StatelessWidget {
 class TopBar extends StatelessWidget {
   const TopBar({
     super.key,
-    required this.query,
-    required this.onQueryChanged,
     required this.onLogout,
     required this.isDark,
     required this.onToggleTheme,
   });
 
-  final String query;
-  final ValueChanged<String> onQueryChanged;
   final VoidCallback onLogout;
   final bool isDark;
   final VoidCallback onToggleTheme;
@@ -590,17 +584,7 @@ class TopBar extends StatelessWidget {
       color: appSurface(context),
       child: Row(
         children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 430),
-            child: TextField(
-              onChanged: onQueryChanged,
-              decoration: const InputDecoration(
-                isDense: true,
-                hintText: 'Pet, sahip veya randevu ara...',
-                prefixIcon: Icon(Icons.search),
-              ),
-            ),
-          ),
+          const BrandHeader(compact: true),
           const Spacer(),
           IconButton(
             onPressed: onToggleTheme,
@@ -1430,6 +1414,7 @@ class AppointmentPage extends StatefulWidget {
 }
 
 class _AppointmentPageState extends State<AppointmentPage> {
+  String localQuery = '';
   late Future<Map<String, dynamic>> future =
       widget.api.request(AppConstants.appointmentsEndpoint);
 
@@ -1442,6 +1427,22 @@ class _AppointmentPageState extends State<AppointmentPage> {
       children: [
         const PageHeader(
             title: 'Randevular', subtitle: 'Randevu durumlarını yönetin.'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 0, 28, 14),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: TextField(
+                onChanged: (value) => setState(() => localQuery = value),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  hintText: 'Randevu, pet, sahip, telefon veya durum ara...',
+                  prefixIcon: Icon(Icons.search),
+                ),
+              ),
+            ),
+          ),
+        ),
         Expanded(
           child: FutureBuilder<Map<String, dynamic>>(
             future: future,
@@ -1453,7 +1454,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
               if (!snapshot.hasData)
                 return const Center(child: CircularProgressIndicator());
               final allRows = snapshot.data!['data'] as List;
-              final q = widget.query.trim().toLowerCase();
+              final q = localQuery.trim().toLowerCase();
               final rows = q.isEmpty
                   ? allRows
                   : allRows
@@ -1511,28 +1512,40 @@ class _AppointmentPageState extends State<AppointmentPage> {
   }
 }
 
-class HospitalizedPage extends StatelessWidget {
+class HospitalizedPage extends StatefulWidget {
   const HospitalizedPage({super.key, required this.query});
 
   final String query;
 
   @override
+  State<HospitalizedPage> createState() => _HospitalizedPageState();
+}
+
+class _HospitalizedPageState extends State<HospitalizedPage> {
+  final List<HospitalRecord> records = List.of(sampleHospitalized);
+  HospitalRecord? selected;
+
+  @override
   Widget build(BuildContext context) {
-    final rows = sampleHospitalized
-        .where((item) => '${item.pet} ${item.owner} ${item.reason}'
-            .toLowerCase()
-            .contains(query.toLowerCase()))
+    final rows = records
+        .where((item) =>
+            '${item.pet} ${item.owner} ${item.reason} ${item.room} ${item.treatment} ${item.notes}'
+                .toLowerCase()
+                .contains(widget.query.toLowerCase()))
         .toList();
+    if (selected != null) {
+      return HospitalDetailPage(
+        record: selected!,
+        onBack: () => setState(() => selected = null),
+      );
+    }
     return Column(
       children: [
         PageHeader(
           title: 'Yatan Hastalar',
           subtitle: 'Klinikte takip edilen hastaların oda ve durum kayıtları.',
           action: FilledButton.icon(
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text(
-                        'Hasta yatışı ekleme ekranı hazır. Kalıcı kayıt için yatan hasta API endpointi bağlanabilir.'))),
+            onPressed: showAdmissionForm,
             icon: const Icon(Icons.add),
             label: const Text('Hasta Yatışı'),
           ),
@@ -1545,17 +1558,189 @@ class HospitalizedPage extends StatelessWidget {
               final item = rows[index];
               return Card(
                 child: ListTile(
+                  onTap: () => setState(() => selected = item),
                   leading: const CircleAvatar(
                       backgroundColor: Color(0xFFE1F5EE),
                       child: Icon(Icons.local_hospital_outlined,
                           color: Color(0xFF0F6E56))),
                   title: Text(item.pet,
                       style: const TextStyle(fontWeight: FontWeight.w800)),
-                  subtitle: Text('${item.owner} • ${item.reason}'),
+                  subtitle: Text(
+                      '${item.owner} • ${item.reason}\nTedavi: ${item.treatment}'),
+                  isThreeLine: true,
                   trailing: Chip(label: Text(item.room)),
                 ),
               );
             },
+          ),
+        ),
+      ],
+    );
+  }
+
+  void showAdmissionForm() {
+    final pet = TextEditingController();
+    final owner = TextEditingController();
+    final phone = TextEditingController();
+    final room = TextEditingController();
+    final reason = TextEditingController();
+    final treatment = TextEditingController();
+    final notes = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Hasta Yatışı'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: pet,
+                    decoration:
+                        const InputDecoration(labelText: 'Hasta / pet adı')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: owner,
+                    decoration: const InputDecoration(labelText: 'Sahip adı')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: phone,
+                    decoration: const InputDecoration(labelText: 'Telefon')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: room,
+                    decoration:
+                        const InputDecoration(labelText: 'Oda / kafes')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: reason,
+                    decoration:
+                        const InputDecoration(labelText: 'Yatış nedeni')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: treatment,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration:
+                        const InputDecoration(labelText: 'Uygulanacak tedavi')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: notes,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration:
+                        const InputDecoration(labelText: 'Veteriner notu')),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Vazgeç')),
+          FilledButton(
+            onPressed: () {
+              if (pet.text.trim().isEmpty || treatment.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('Pet adı ve uygulanacak tedavi zorunlu.')),
+                );
+                return;
+              }
+              setState(() {
+                records.insert(
+                  0,
+                  HospitalRecord(
+                    pet.text.trim(),
+                    owner.text.trim(),
+                    reason.text.trim(),
+                    room.text.trim().isEmpty
+                        ? 'Oda belirtilmedi'
+                        : room.text.trim(),
+                    treatment.text.trim(),
+                    phone.text.trim(),
+                    notes.text.trim(),
+                    DateTime.now(),
+                  ),
+                );
+              });
+              Navigator.pop(context);
+            },
+            child: const Text('Yatış Yap'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HospitalDetailPage extends StatelessWidget {
+  const HospitalDetailPage({
+    super.key,
+    required this.record,
+    required this.onBack,
+  });
+
+  final HospitalRecord record;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final admittedAt = record.admittedAt ?? DateTime(2026, 5, 25);
+    return ListView(
+      children: [
+        PageHeader(
+          title: record.pet,
+          subtitle: 'Yatan hasta detayları ve uygulanacak tedavi',
+          action: FilledButton.tonalIcon(
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back),
+            label: const Text('Geri Git'),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 14,
+                    runSpacing: 14,
+                    children: [
+                      PetInfoTile(label: 'Hasta / Pet', value: record.pet),
+                      PetInfoTile(label: 'Sahip', value: record.owner),
+                      PetInfoTile(label: 'Telefon', value: record.phone),
+                      PetInfoTile(label: 'Oda / Kafes', value: record.room),
+                      PetInfoTile(label: 'Yatış Nedeni', value: record.reason),
+                      PetInfoTile(
+                          label: 'Yatış Tarihi',
+                          value:
+                              '${admittedAt.day.toString().padLeft(2, '0')}.${admittedAt.month.toString().padLeft(2, '0')}.${admittedAt.year}'),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Text('Uygulanacak Tedavi',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F6E56))),
+                  const SizedBox(height: 8),
+                  Text(record.treatment.isEmpty ? '-' : record.treatment),
+                  const SizedBox(height: 18),
+                  Text('Veteriner Notu',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F6E56))),
+                  const SizedBox(height: 8),
+                  Text(record.notes.isEmpty ? '-' : record.notes),
+                ],
+              ),
+            ),
           ),
         ),
       ],
@@ -2930,12 +3115,25 @@ class PetRecord {
 }
 
 class HospitalRecord {
-  const HospitalRecord(this.pet, this.owner, this.reason, this.room);
+  const HospitalRecord(
+    this.pet,
+    this.owner,
+    this.reason,
+    this.room, [
+    this.treatment = 'Tedavi planı belirtilmedi',
+    this.phone = '-',
+    this.notes = '',
+    this.admittedAt,
+  ]);
 
   final String pet;
   final String owner;
   final String reason;
   final String room;
+  final String treatment;
+  final String phone;
+  final String notes;
+  final DateTime? admittedAt;
 }
 
 const samplePets = [
@@ -3071,7 +3269,28 @@ const samplePets = [
 ];
 
 const sampleHospitalized = [
-  HospitalRecord('GÜMÜŞ VET - Luna', 'DAMLA TOKUR', 'Serum ve gözlem', 'Oda 1'),
-  HospitalRecord('Tyson', 'AHMET TOK', 'Operasyon sonrası takip', 'Oda 2'),
-  HospitalRecord('ZEYTİN', 'ELİF GÜVEN', 'Ateş ve iştahsızlık', 'Oda 3'),
+  HospitalRecord(
+      'GÜMÜŞ VET - Luna',
+      'DAMLA TOKUR',
+      'Serum ve gözlem',
+      'Oda 1',
+      'Sıvı tedavisi, ateş takibi ve 4 saatte bir genel durum kontrolü',
+      '5466696329',
+      'İştah ve su tüketimi takip edilecek.'),
+  HospitalRecord(
+      'Tyson',
+      'AHMET TOK',
+      'Operasyon sonrası takip',
+      'Oda 2',
+      'Ağrı kontrolü, pansuman ve antibiyotik protokolü',
+      '5422031281',
+      'Dikiş bölgesi sabah akşam kontrol edilecek.'),
+  HospitalRecord(
+      'ZEYTİN',
+      'ELİF GÜVEN',
+      'Ateş ve iştahsızlık',
+      'Oda 3',
+      'Ateş düşürücü destek, kan tahlili kontrolü ve beslenme takibi',
+      '5388388949',
+      '24 saat gözlem önerildi.'),
 ];
