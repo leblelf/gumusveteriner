@@ -41,7 +41,7 @@
     <div class="logo-badge"><img src="/logo.jpeg" alt="Gümüş Veteriner logosu"></div>
     Gümüş Veteriner
   </div>
-  <button class="nb mobile-menu-btn" type="button" onclick="toggleMobileMenu()">☰ Menü</button>
+  <button class="nb mobile-menu-btn" type="button" onclick="toggleMobileMenu()" aria-label="Menüyü aç veya kapat">☰</button>
   <button class="nb" id="nb-home"     onclick="go('home')">Ana Sayfa</button>
   <button class="nb" id="nb-about"    onclick="go('about')">Hakkımızda</button>
   <button class="nb" id="nb-services" onclick="go('services')">Hizmetler</button>
@@ -53,7 +53,7 @@
   <button class="nav-user" id="nav-user" type="button" onclick="go('profile')"></button>
   <button class="nb" id="logoutBtn" style="display:none" onclick="logout()">Çıkış</button>
   <button class="theme-toggle" type="button" onclick="toggleTheme()" title="Tema değiştir">◐</button>
-  <button class="nb" onclick="openCart()">🛒 Sepet <span class="cart-badge" id="cart-count">0</span></button>
+  <button class="nb cart-nav-btn" onclick="openCart()" aria-label="Sepeti aç">🛒 <span class="cart-label">Sepet</span> <span class="cart-badge" id="cart-count">0</span></button>
   <button class="nb cta" onclick="go('appt')">📅 Randevu Al</button>
 </nav>
 
