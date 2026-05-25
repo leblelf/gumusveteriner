@@ -855,15 +855,18 @@ class PetListPage extends StatefulWidget {
 }
 
 class _PetListPageState extends State<PetListPage> {
+  static const int pageSize = 12;
   String localQuery = '';
   bool grid = false;
+  int pageIndex = 0;
+  PetRecord? selectedPet;
   final List<PetRecord> pets = List.of(samplePets);
 
   List<PetRecord> get filtered {
     final q = '${widget.query} $localQuery'.trim().toLowerCase();
     if (q.isEmpty) return pets;
     return pets.where((pet) {
-      return '${pet.name} ${pet.tag} ${pet.owner} ${pet.breed} ${pet.phone}'
+      return '${pet.name} ${pet.tag} ${pet.type} ${pet.owner} ${pet.breed} ${pet.phone}'
           .toLowerCase()
           .contains(q);
     }).toList();
@@ -872,6 +875,26 @@ class _PetListPageState extends State<PetListPage> {
   @override
   Widget build(BuildContext context) {
     final rows = filtered;
+    final totalPages = rows.isEmpty ? 1 : ((rows.length - 1) ~/ pageSize) + 1;
+    final safePage = pageIndex.clamp(0, totalPages - 1).toInt();
+    final start = safePage * pageSize;
+    final pageRows = rows.skip(start).take(pageSize).toList();
+    if (pageIndex != safePage) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => pageIndex = safePage);
+      });
+    }
+    if (selectedPet != null) {
+      return PetDetailPage(
+        pet: selectedPet!,
+        onBack: () => setState(() => selectedPet = null),
+        onEdit: editPet,
+        onDelete: (pet) {
+          deletePet(pet);
+          setState(() => selectedPet = null);
+        },
+      );
+    }
     return Column(
       children: [
         PageHeader(
@@ -892,7 +915,10 @@ class _PetListPageState extends State<PetListPage> {
                 children: [
                   Expanded(
                     child: TextField(
-                      onChanged: (value) => setState(() => localQuery = value),
+                      onChanged: (value) => setState(() {
+                        localQuery = value;
+                        pageIndex = 0;
+                      }),
                       decoration: const InputDecoration(
                         isDense: true,
                         hintText: 'Pet adı, sahip adı veya Künye No ile ara...',
@@ -927,9 +953,9 @@ class _PetListPageState extends State<PetListPage> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: grid
-                ? PetGrid(rows: rows)
+                ? PetGrid(rows: pageRows, onDetail: showPetDetail)
                 : PetTable(
-                    rows: rows,
+                    rows: pageRows,
                     onDelete: deletePet,
                     onDetail: showPetDetail,
                     onEdit: editPet,
@@ -941,23 +967,30 @@ class _PetListPageState extends State<PetListPage> {
           child: Row(
             children: [
               Text(
-                  'Toplam 64 kayıttan 1-${rows.length.clamp(0, 12)} arası gösteriliyor',
+                  rows.isEmpty
+                      ? 'Kayıt bulunamadı'
+                      : 'Toplam ${rows.length} kayıttan ${start + 1}-${start + pageRows.length} arası gösteriliyor',
                   style: TextStyle(color: appMuted(context))),
               const Spacer(),
               TextButton(
-                  onPressed: () => showPageMessage('Önceki sayfa'),
+                  onPressed: safePage == 0
+                      ? null
+                      : () => setState(() => pageIndex = safePage - 1),
                   child: const Text('Önceki')),
-              FilledButton(
-                  onPressed: () => showPageMessage('1. sayfa'),
-                  child: const Text('1')),
+              for (var i = 0; i < totalPages; i++)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: i == safePage
+                      ? FilledButton(onPressed: () {}, child: Text('${i + 1}'))
+                      : TextButton(
+                          onPressed: () => setState(() => pageIndex = i),
+                          child: Text('${i + 1}'),
+                        ),
+                ),
               TextButton(
-                  onPressed: () => showPageMessage('2. sayfa'),
-                  child: const Text('2')),
-              TextButton(
-                  onPressed: () => showPageMessage('6. sayfa'),
-                  child: const Text('6')),
-              TextButton(
-                  onPressed: () => showPageMessage('Sonraki sayfa'),
+                  onPressed: safePage >= totalPages - 1
+                      ? null
+                      : () => setState(() => pageIndex = safePage + 1),
                   child: const Text('Sonraki')),
             ],
           ),
@@ -1018,23 +1051,25 @@ class _PetListPageState extends State<PetListPage> {
   }
 
   void showPageMessage(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    final rows = filtered;
+    final totalPages = rows.isEmpty ? 1 : ((rows.length - 1) ~/ pageSize) + 1;
+    if (text.contains('1.')) {
+      setState(() => pageIndex = 0);
+    } else if (text.contains('2.')) {
+      setState(() => pageIndex = 1);
+    } else if (text.contains('6.')) {
+      setState(() => pageIndex = 5.clamp(0, totalPages - 1).toInt());
+    } else if (text.contains('Sonraki')) {
+      setState(
+          () => pageIndex = (pageIndex + 1).clamp(0, totalPages - 1).toInt());
+    } else {
+      setState(
+          () => pageIndex = (pageIndex - 1).clamp(0, totalPages - 1).toInt());
+    }
   }
 
   void showPetDetail(PetRecord pet) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(pet.name),
-        content: Text(
-            'Künye: ${pet.tag}\nTür: ${pet.type}\nIrk: ${pet.breed}\nSahip: ${pet.owner.isEmpty ? 'Sahipsiz' : pet.owner}\nTelefon: ${pet.phone}'),
-        actions: [
-          FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Tamam'))
-        ],
-      ),
-    );
+    setState(() => selectedPet = pet);
   }
 
   void editPet(PetRecord pet) {
@@ -1065,8 +1100,10 @@ class _PetListPageState extends State<PetListPage> {
               final index = pets.indexOf(pet);
               if (index >= 0) {
                 setState(() {
-                  pets[index] = PetRecord(name.text.trim(), pet.tag, pet.type,
+                  final updated = PetRecord(name.text.trim(), pet.tag, pet.type,
                       pet.breed, owner.text.trim(), pet.phone);
+                  pets[index] = updated;
+                  if (selectedPet == pet) selectedPet = updated;
                 });
               }
               Navigator.pop(context);
@@ -1074,6 +1111,115 @@ class _PetListPageState extends State<PetListPage> {
             child: const Text('Kaydet'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class PetDetailPage extends StatelessWidget {
+  const PetDetailPage({
+    super.key,
+    required this.pet,
+    required this.onBack,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final PetRecord pet;
+  final VoidCallback onBack;
+  final ValueChanged<PetRecord> onEdit;
+  final ValueChanged<PetRecord> onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final owner = pet.owner.trim().isEmpty ? 'Sahipsiz' : pet.owner;
+    final phone = pet.phone.trim().isEmpty ? '-' : pet.phone;
+    return ListView(
+      children: [
+        PageHeader(
+          title: pet.name,
+          subtitle: 'Pet kaydındaki tüm bilgiler',
+          action: FilledButton.tonalIcon(
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back),
+            label: const Text('Geri Git'),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  PetIdentity(pet: pet),
+                  const SizedBox(height: 22),
+                  Wrap(
+                    spacing: 14,
+                    runSpacing: 14,
+                    children: [
+                      PetInfoTile(label: 'Pet Adı', value: pet.name),
+                      PetInfoTile(label: 'Mikroçip No', value: pet.tag),
+                      PetInfoTile(label: 'Tür', value: pet.type),
+                      PetInfoTile(label: 'Irk', value: pet.breed),
+                      PetInfoTile(label: 'Sahip', value: owner),
+                      PetInfoTile(label: 'İletişim', value: phone),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () => onEdit(pet),
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('Düzenle'),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton.tonalIcon(
+                        onPressed: () => onDelete(pet),
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Sil'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class PetInfoTile extends StatelessWidget {
+  const PetInfoTile({super.key, required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 250,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: appBackground(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: appBorder(context)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: TextStyle(color: appMuted(context), fontSize: 12)),
+            const SizedBox(height: 6),
+            Text(value.isEmpty ? '-' : value,
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+          ],
+        ),
       ),
     );
   }
@@ -1104,8 +1250,10 @@ class PetTable extends StatelessWidget {
               headingRowColor: WidgetStateProperty.all(appBackground(context)),
               columnSpacing: 56,
               columns: const [
-                DataColumn(label: Text('PET BİLGİSİ')),
-                DataColumn(label: Text('TÜR / IRK')),
+                DataColumn(label: Text('PET ADI')),
+                DataColumn(label: Text('MİKROÇİP')),
+                DataColumn(label: Text('TÜR')),
+                DataColumn(label: Text('IRK')),
                 DataColumn(label: Text('SAHİP')),
                 DataColumn(label: Text('İLETİŞİM')),
                 DataColumn(label: Text('İŞLEMLER')),
@@ -1114,19 +1262,14 @@ class PetTable extends StatelessWidget {
                   .map(
                     (pet) => DataRow(
                       cells: [
-                        DataCell(PetIdentity(pet: pet)),
-                        DataCell(Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(pet.type,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w800)),
-                            Text(pet.breed,
-                                style: const TextStyle(
-                                    fontSize: 12, color: Color(0xFF75868E))),
-                          ],
-                        )),
+                        DataCell(
+                            PetIdentity(pet: pet, onTap: () => onDetail(pet))),
+                        DataCell(Text(pet.tag,
+                            style: const TextStyle(
+                                color: Color(0xFFE3A35A),
+                                fontWeight: FontWeight.w700))),
+                        DataCell(Text(pet.type)),
+                        DataCell(Text(pet.breed)),
                         DataCell(OwnerBadge(pet: pet)),
                         DataCell(Row(children: [
                           const Icon(Icons.phone_outlined,
@@ -1161,9 +1304,10 @@ class PetTable extends StatelessWidget {
 }
 
 class PetGrid extends StatelessWidget {
-  const PetGrid({super.key, required this.rows});
+  const PetGrid({super.key, required this.rows, required this.onDetail});
 
   final List<PetRecord> rows;
+  final ValueChanged<PetRecord> onDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -1183,7 +1327,7 @@ class PetGrid extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                PetIdentity(pet: pet),
+                PetIdentity(pet: pet, onTap: () => onDetail(pet)),
                 const Spacer(),
                 Text('${pet.type} / ${pet.breed}',
                     style: TextStyle(color: appMuted(context))),
@@ -1199,9 +1343,10 @@ class PetGrid extends StatelessWidget {
 }
 
 class PetIdentity extends StatelessWidget {
-  const PetIdentity({super.key, required this.pet});
+  const PetIdentity({super.key, required this.pet, this.onTap});
 
   final PetRecord pet;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1225,12 +1370,17 @@ class PetIdentity extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(pet.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-            Text(pet.tag,
-                style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFFE3A35A),
-                    fontWeight: FontWeight.w700)),
+            InkWell(
+              onTap: onTap,
+              child: Text(
+                pet.name,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: onTap == null ? null : const Color(0xFF0F6E56),
+                  decoration: onTap == null ? null : TextDecoration.underline,
+                ),
+              ),
+            ),
           ],
         ),
       ],
