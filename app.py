@@ -37,6 +37,11 @@ from services.email_service import EmailResult, send_email
 from services.sms_service import send_sms, validate_sms_message, normalize_tr_phone
 
 
+# ---------------------------------------------------------------------------
+# Uygulama ayarlari
+# ---------------------------------------------------------------------------
+# Dosya yollari, deploy bilgileri ve uygulama genel sabitleri burada durur.
+# Render/Railway gibi servisler PORT degerini ortam degiskeni olarak verir.
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "gumus_veteriner.db"
 HOST = "0.0.0.0"
@@ -54,7 +59,7 @@ DEFAULT_APPOINTMENT_TIMES = [
     "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30",
 ]
 
-# Railway ve Gunicorn bu degiskeni arar: `gunicorn app:app`.
+# Render/Railway ve Gunicorn bu degiskeni arar: `gunicorn app:app`.
 app = Flask(__name__, static_folder=None)
 CORS(app)
 
@@ -69,6 +74,8 @@ def connect() -> sqlite3.Connection:
 def init_db() -> None:
     """Uygulama icin gereken tum tablolar yoksa olusturulur."""
     with connect() as db:
+        # SQL semasi tek yerde tutuluyor. Yeni tablo/kolon eklerken once buraya
+        # bak; uygulama acilisinda eksik yapilar otomatik tamamlanir.
         db.executescript(
             """
             CREATE TABLE IF NOT EXISTS appointments (
@@ -533,7 +540,7 @@ def send_order_status_email(order: dict, status: str) -> EmailResult | None:
 
 
 def api_response(success: bool, message: str, data=None, status: HTTPStatus = HTTPStatus.OK):
-    """Mobil/masaustu uygulamalar icin standart JSON cevap formati."""
+    """Web ve admin uygulamasinin bekledigi standart JSON cevap formati."""
     return {"success": success, "message": message, "data": data}, int(status)
 
 
@@ -575,6 +582,14 @@ def require_admin_api(func):
 
 
 class GumusVeterinerHandler(SimpleHTTPRequestHandler):
+    """Eski saf-Python HTTP handler.
+
+    Proje ilk baslarda Flask olmadan yazildigi icin bazi is kurallari burada
+    duruyor. Alttaki Flask adapter bu metotlari kullanarak eski davranisi
+    koruyor. Bu sayede web sitesi ve admin API'leri yeniden yazilmadan deploy
+    edilebilir hale geldi.
+    """
+
     """Eski local sunucu/API is mantigi.
 
     Bu sinif randevu, siparis, uye, admin ve profil API'lerini yonetir.
@@ -1377,6 +1392,11 @@ def add_cors_headers(response: Response) -> Response:
     return response
 
 
+# ---------------------------------------------------------------------------
+# Flask route'lari
+# ---------------------------------------------------------------------------
+# Bu bolum canli ortamda gelen HTTP isteklerini karsilar. Web sitesi HTML'i,
+# SEO dosyalari, public API'ler ve admin API'leri burada tanimlanir.
 @app.errorhandler(Exception)
 def handle_unexpected_error(error):
     """Canli ortamda traceback gostermeden guvenli API hata cevabi doner."""

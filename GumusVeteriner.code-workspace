@@ -1,12 +1,17 @@
 {
   "folders": [
     {
-      "name": "Gümüş Veteriner",
+      "name": "Gumus Veteriner - Web ve Admin",
       "path": "."
     }
   ],
   "settings": {
     "files.encoding": "utf8",
-    "explorer.compactFolders": false
+    "explorer.compactFolders": false,
+    "liveServer.settings.port": 5501,
+    "editor.wordWrap": "on",
+    "files.associations": {
+      "Procfile": "properties"
+    }
   }
 }

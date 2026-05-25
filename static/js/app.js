@@ -10,6 +10,12 @@
 // - Siparis ve odeme akisi
 // - Admin paneli ve sayfa gecisleri
 // ── Ürün verisi API'den gelir ────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// Okuma notu
+// -----------------------------------------------------------------------------
+// Bu dosyanin ustundeki eski yorumlar projenin ilk halinden kaldi. Asil akisi
+// su sekilde dusun: once global durumlar kurulur, sonra sepet/urun/profil
+// fonksiyonlari gelir, en sonda da sayfa gecislerini yoneten go() fonksiyonu var.
 let PRODUCTS = [];
 let currentUser = JSON.parse(localStorage.getItem('gvUser') || 'null');
 let userToken = localStorage.getItem('gvUserToken') || '';
@@ -35,6 +41,7 @@ document.addEventListener('mousemove',event=>{
 });
 
 function toast(message,type='ok'){
+  // Sayfanin sag altinda kisa basari/hata bildirimi gosterir.
   const wrap=document.getElementById('toastWrap');
   const item=document.createElement('div');
   item.className='toast';
@@ -64,6 +71,7 @@ function authHeaders(extra={}){
 }
 
 async function loadSiteContent(){
+  // Admin uygulamasindan duzenlenen site yazilarini API'den ceker.
   try{
     const res=await fetch('/api/site/content');
     const payload=await res.json();
@@ -155,6 +163,7 @@ function cartTotal(){return cartItems().reduce((s,i)=>s+i.price*i.qty,0);}
 function cartCount(){return cartItems().reduce((s,i)=>s+i.qty,0);}
 
 function updateCartUI(){
+  // Sepet rozeti, sepet paneli ve toplam tutari ayni anda gunceller.
   const count=cartCount();
   const badge=document.getElementById('cart-count');
   badge.textContent=count;
@@ -278,6 +287,7 @@ async function loadProducts(){
 
 // ── Profil, adres ve hayvan kayıtları ────────────────────────────────────────
 function renderProfile(){
+  // Profil sayfasinda kullanici bilgisi, adresler ve kayitli hayvanlar gosterilir.
   const user=PROFILE.user || currentUser || {};
   document.getElementById('profileName').textContent=user.full_name || 'Üye';
   document.getElementById('profileEmail').textContent=[user.email,user.phone].filter(Boolean).join(' • ') || 'Profil bilgileri';
@@ -889,6 +899,7 @@ const pageMap={home:'page-home',about:'page-about',services:'page-services',shop
 const navMap={home:'nb-home',about:'nb-about',services:'nb-services',shop:'nb-shop',blog:'nb-blog',contact:'nb-contact',auth:'nb-auth'};
 function go(id){
   // Tek sayfa uygulamada sayfalar arasi gecisleri yoneten ana fonksiyon.
+  // Yeni bir sayfa bolumu eklersen once pageMap'e, sonra HTML'de ilgili id'ye bak.
   if(id==='admin' || id==='adminLogin'){id='home';}
   if(id==='profile' && !userToken && !adminToken){id='auth';}
   if(id==='payment' && !PENDING_ORDER){id='order';}

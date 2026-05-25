@@ -3,6 +3,12 @@
   Gümüş Veteriner sitesinin tüm görsel tasarım kodları burada bulunur.
   Renkler, mobil uyum, kartlar, formlar, sepet, admin paneli ve animasyon stilleri bu dosyadadır.
 */
+/*
+  Okuma notu:
+  - Renk ve tema ayarlari en ustteki :root alanindan gelir.
+  - Mobil gorunum dosyanin altindaki @media(max-width:600px) bolumundedir.
+  - Sepet, profil, odeme ve giris animasyonlari kendi basliklari altinda durur.
+*/
 /* Genel reset ve renk degiskenleri. Tum site renkleri bu :root alanindan beslenir. */
 *{margin:0;padding:0;box-sizing:border-box}
 :root{

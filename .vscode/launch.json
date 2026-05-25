@@ -2,11 +2,12 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Gümüş Veteriner: Python Sunucu",
+      "name": "Gumus Veteriner: Flask Web Sunucu",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/app.py",
-      "console": "integratedTerminal"
+      "console": "integratedTerminal",
+      "justMyCode": true
     }
   ]
 }

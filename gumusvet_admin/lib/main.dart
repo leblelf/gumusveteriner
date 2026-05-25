@@ -4,6 +4,19 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'core/constants/app_constants.dart';
 import 'core/network/api_service.dart';
 
+// -----------------------------------------------------------------------------
+// Gumus Vet Admin
+// -----------------------------------------------------------------------------
+// Bu dosya Flutter admin uygulamasinin ana dosyasidir.
+//
+// Okuma sirasi:
+// 1. Tema ve uygulama girisi
+// 2. Login ekrani
+// 3. AdminShell: ust bar, sol menu ve sayfa gecisleri
+// 4. Yonetim sayfalari: Dashboard, Randevular, Petler, Yatan Hastalar...
+// 5. Veri modelleri ve ornek kayitlar
+// -----------------------------------------------------------------------------
+
 void main() {
   runApp(const GumusVetAdminApp());
 }
@@ -39,6 +52,7 @@ class _GumusVetAdminAppState extends State<GumusVetAdminApp> {
 }
 
 ThemeData buildAdminTheme(Brightness brightness) {
+  // Web sitesindeki yesil/temiz klinik hissini admin uygulamasina tasir.
   final dark = brightness == Brightness.dark;
   final background = dark ? const Color(0xFF07110F) : const Color(0xFFF4F8F6);
   final surface = dark ? const Color(0xFF101C19) : Colors.white;
@@ -97,6 +111,8 @@ Color appMuted(BuildContext context) =>
 Color appOrange(BuildContext context) => Theme.of(context).colorScheme.primary;
 
 class ApiClient {
+  // Backend API ile konusmak icin kucuk bir yardimci sinif.
+  // Token saklama isi login sonrasinda FlutterSecureStorage ile yapilir.
   ApiClient(this.storage);
 
   final FlutterSecureStorage storage;
@@ -277,6 +293,8 @@ class AdminShell extends StatefulWidget {
 }
 
 class _AdminShellState extends State<AdminShell> {
+  // Admin girisinden sonra gorunen ana iskelet.
+  // selected sol menude hangi sayfanin acik oldugunu tutar.
   int selected = 2;
   String query = '';
 
@@ -839,6 +857,8 @@ class PetListPage extends StatefulWidget {
 }
 
 class _PetListPageState extends State<PetListPage> {
+  // Excel'den aktarilan petler burada listelenir. Arama, 12'li sayfalama ve
+  // detay ekrani tamamen bu state icinde yonetilir.
   static const int pageSize = 12;
   String localQuery = '';
   bool grid = false;
@@ -1522,6 +1542,8 @@ class HospitalizedPage extends StatefulWidget {
 }
 
 class _HospitalizedPageState extends State<HospitalizedPage> {
+  // Yatan hasta kayitlari uygulama icinde tutulur. Hasta yatisi formu yeni
+  // kayit ekler; kayda tiklaninca tedavi plani dahil tum detaylar acilir.
   final List<HospitalRecord> records = List.of(sampleHospitalized);
   HospitalRecord? selected;
 
