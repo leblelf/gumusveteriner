@@ -151,12 +151,17 @@ function addCart(id,name,price,emoji){
   updateCartUI();
   showCartFlash();
 }
-function removeCart(id){delete cart[id];updateCartUI();}
+function removeCart(id){
+  delete cart[id];
+  updateCartUI();
+  renderOrderSummary();
+}
 function changeQty(id,delta){
   if(!cart[id])return;
   cart[id].qty+=delta;
   if(cart[id].qty<=0)delete cart[id];
   updateCartUI();
+  renderOrderSummary();
 }
 function cartItems(){return Object.values(cart);}
 function cartTotal(){return cartItems().reduce((s,i)=>s+i.price*i.qty,0);}
@@ -205,6 +210,31 @@ function showCartFlash(){
   const b=document.querySelector('.nb[onclick="openCart()"]');
   b.style.background='var(--teal)';b.style.color='#fff';
   setTimeout(()=>{b.style.background='';b.style.color='';},800);
+}
+
+function renderOrderSummary(){
+  // Siparis sayfasindaki sepet ozeti. Burada da adet artir/azalt ve sil islemi yapilabilir.
+  const list=document.getElementById('order-items-list');
+  const total=document.getElementById('order-total');
+  if(!list || !total)return;
+  const items=cartItems();
+  if(!items.length){
+    list.innerHTML='<div class="cart-empty" style="padding:1rem">Sepetiniz bos.<br><small>Urunler sayfasindan ekleyin.</small></div>';
+    total.textContent='₺0';
+    return;
+  }
+  list.innerHTML=items.map(i=>`
+    <div class="order-line order-line-edit">
+      <span>${i.emoji || ''} ${i.name}<small>Adet: ${i.qty} • Birim fiyat: ₺${i.price.toLocaleString('tr-TR')}</small></span>
+      <div class="order-line-actions">
+        <span class="order-line-total">₺${(i.price*i.qty).toLocaleString('tr-TR')}</span>
+        <button class="qty-btn" type="button" onclick="changeQty(${i.id},-1)">−</button>
+        <span class="qty-num">${i.qty}</span>
+        <button class="qty-btn" type="button" onclick="changeQty(${i.id},1)">+</button>
+        <button class="ci-del order-del" type="button" onclick="removeCart(${i.id})">Sil</button>
+      </div>
+    </div>`).join('');
+  total.textContent='₺'+cartTotal().toLocaleString('tr-TR');
 }
 
 // ── Ürün listesi ─────────────────────────────────────────────────────────────
@@ -419,13 +449,8 @@ async function goOrder(){
   if(currentUser && !PROFILE.user){
     try{await loadProfile();}catch(e){toast(e.message || 'Profil yüklenemedi','err');}
   }
-  // Sipariş özeti render
-  document.getElementById('order-items-list').innerHTML=items.map(i=>
-    `<div class="order-line">
-      <span>${i.emoji || ''} ${i.name}<small>Adet: ${i.qty} • Birim fiyat: ₺${i.price.toLocaleString('tr-TR')}</small></span>
-      <span style="font-weight:500">₺${(i.price*i.qty).toLocaleString('tr-TR')}</span>
-    </div>`).join('');
-  document.getElementById('order-total').textContent='₺'+cartTotal().toLocaleString('tr-TR');
+  // Siparis ozeti render edilir; kullanici bu ekranda adetleri degistirebilir.
+  renderOrderSummary();
   prepareOrderForm();
   go('order');
 }
