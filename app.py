@@ -29,12 +29,13 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import jwt
-from flask import Flask, Response, render_template, request, send_from_directory
+from authlib.integrations.flask_client import OAuth
+from flask import Flask, Response, redirect, render_template, request, send_from_directory, session, url_for
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from services.email_service import EmailResult, send_email
-from services.sms_service import send_sms, validate_sms_message, normalize_tr_phone
+from services.sms_service import load_local_env, send_sms, validate_sms_message, normalize_tr_phone
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +62,16 @@ DEFAULT_APPOINTMENT_TIMES = [
 
 # Render/Railway ve Gunicorn bu degiskeni arar: `gunicorn app:app`.
 app = Flask(__name__, static_folder=None)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or JWT_SECRET
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER") or os.environ.get("RAILWAY_ENVIRONMENT")),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
 CORS(app)
+oauth = OAuth(app)
+GOOGLE_OAUTH_REGISTERED = False
 
 
 def connect() -> sqlite3.Connection:
@@ -168,9 +178,12 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                google_id TEXT UNIQUE,
                 full_name TEXT NOT NULL,
+                name TEXT,
                 email TEXT NOT NULL UNIQUE,
                 phone TEXT,
+                profile_picture TEXT,
                 password_hash TEXT NOT NULL,
                 password_salt TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'member',
@@ -268,6 +281,10 @@ def init_db() -> None:
         seed_api_admin(db)
         seed_site_content(db)
         ensure_column(db, "users", "is_banned", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "users", "google_id", "TEXT")
+        ensure_column(db, "users", "name", "TEXT")
+        ensure_column(db, "users", "profile_picture", "TEXT")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL")
         ensure_column(db, "orders", "user_id", "INTEGER")
         ensure_column(db, "orders", "payment_last4", "TEXT")
         ensure_column(db, "orders", "payment_status", "TEXT")
@@ -491,17 +508,118 @@ def get_request_session_user() -> sqlite3.Row | None:
     auth = request.headers.get("Authorization", "")
     token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
     if not token:
+        token = session.get("session_token", "")
+    if not token:
         return None
     with connect() as db:
         return db.execute(
             """
-            SELECT users.id, users.full_name, users.email, users.phone, users.role, users.created_at, users.is_banned
+            SELECT users.id, users.google_id, users.full_name, users.name, users.email, users.phone,
+                   users.profile_picture, users.role, users.created_at, users.is_banned
             FROM sessions
             JOIN users ON users.id = sessions.user_id
             WHERE sessions.token = ?
             """,
             (token,),
         ).fetchone()
+
+
+def create_user_session(db: sqlite3.Connection, user: sqlite3.Row, remember: bool = False) -> str:
+    """Kullanici icin hem veritabani token'i hem Flask session kaydi olusturur."""
+    token = secrets.token_urlsafe(32)
+    db.execute(
+        "INSERT INTO sessions (token, user_id, role, created_at) VALUES (?, ?, ?, ?)",
+        (token, user["id"], user["role"], datetime.now().isoformat(timespec="seconds")),
+    )
+    session.permanent = remember
+    session["user_id"] = user["id"]
+    session["session_token"] = token
+    session["role"] = user["role"]
+    return token
+
+
+def login_required(view):
+    """Flask route'lari icin basit uye girisi korumasi."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        user = get_request_session_user()
+        if not user:
+            return redirect(url_for("serve_app_index"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+class UserModel:
+    """Google ve klasik uye kayitlarinin ayni users tablosunda tutulmasini saglar."""
+
+    @staticmethod
+    def find_by_google_or_email(db: sqlite3.Connection, google_id: str, email: str) -> sqlite3.Row | None:
+        return db.execute(
+            "SELECT * FROM users WHERE google_id = ? OR email = ? ORDER BY google_id = ? DESC LIMIT 1",
+            (google_id, email, google_id),
+        ).fetchone()
+
+    @staticmethod
+    def upsert_google_user(db: sqlite3.Connection, profile: dict) -> sqlite3.Row:
+        google_id = str(profile.get("sub") or "").strip()
+        email = validate_email(profile.get("email") or "")
+        name = (profile.get("name") or email.split("@")[0]).strip()
+        picture = (profile.get("picture") or "").strip()
+        if not google_id:
+            raise ValueError("Google kullanici kimligi alinamadi")
+
+        existing = UserModel.find_by_google_or_email(db, google_id, email)
+        if existing:
+            db.execute(
+                """
+                UPDATE users
+                SET google_id = ?, full_name = ?, name = ?, profile_picture = ?
+                WHERE id = ?
+                """,
+                (google_id, name, name, picture, existing["id"]),
+            )
+            return db.execute("SELECT * FROM users WHERE id = ?", (existing["id"],)).fetchone()
+
+        password_hash, password_salt = hash_password(secrets.token_urlsafe(24))
+        cursor = db.execute(
+            """
+            INSERT INTO users
+              (google_id, full_name, name, email, phone, profile_picture, password_hash, password_salt, role, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'member', ?)
+            """,
+            (
+                google_id,
+                name,
+                name,
+                email,
+                "",
+                picture,
+                password_hash,
+                password_salt,
+                datetime.now().isoformat(timespec="seconds"),
+            ),
+        )
+        return db.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+
+
+def ensure_google_oauth():
+    """Google OAuth istemcisini ortam degiskenleri varsa kaydeder."""
+    global GOOGLE_OAUTH_REGISTERED
+    load_local_env()
+    client_id = (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
+    client_secret = (os.environ.get("GOOGLE_CLIENT_SECRET") or "").strip()
+    if not client_id or not client_secret:
+        return None
+    if not GOOGLE_OAUTH_REGISTERED:
+        oauth.register(
+            name="google",
+            client_id=client_id,
+            client_secret=client_secret,
+            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid email profile"},
+        )
+        GOOGLE_OAUTH_REGISTERED = True
+    return oauth.google
 
 
 def order_with_items(db: sqlite3.Connection, order_id: int) -> dict | None:
@@ -728,8 +846,8 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         with connect() as db:
             return db.execute(
                 """
-                SELECT users.id, users.full_name, users.email, users.phone, users.role, users.created_at
-                , users.is_banned
+                SELECT users.id, users.google_id, users.full_name, users.name, users.email, users.phone,
+                       users.profile_picture, users.role, users.created_at, users.is_banned
                 FROM sessions
                 JOIN users ON users.id = sessions.user_id
                 WHERE sessions.token = ?
@@ -1284,8 +1402,10 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 "user": {
                     "id": user["id"],
                     "full_name": user["full_name"],
+                    "name": user["name"] if "name" in user.keys() else user["full_name"],
                     "email": user["email"],
                     "phone": user["phone"],
+                    "profile_picture": user["profile_picture"] if "profile_picture" in user.keys() else "",
                     "role": user["role"],
                     "is_banned": user["is_banned"],
                     "created_at": user["created_at"],
@@ -1481,6 +1601,77 @@ def sitemap_xml() -> Response:
 </urlset>
 """
     return Response(content, content_type="application/xml; charset=utf-8")
+
+
+@app.route("/login/google")
+def google_login():
+    """Google OAuth akisini baslatir."""
+    google = ensure_google_oauth()
+    if not google:
+        return redirect("/?google_error=missing_config")
+    remember = request.args.get("remember") == "1"
+    session["google_remember"] = remember
+    redirect_uri = url_for("google_callback", _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+
+@app.route("/auth/google/callback")
+def google_callback():
+    """Google'dan donen kullaniciyi users tablosuna kaydeder veya eslestirir."""
+    google = ensure_google_oauth()
+    if not google:
+        return redirect("/?google_error=missing_config")
+    try:
+        token = google.authorize_access_token()
+        profile = token.get("userinfo")
+        if not profile:
+            profile = google.get("userinfo").json()
+        remember = bool(session.pop("google_remember", False))
+        with connect() as db:
+            user = UserModel.upsert_google_user(db, dict(profile))
+            session_token = create_user_session(db, user, remember=remember)
+            db.commit()
+        session["google_login_token"] = session_token
+        return redirect("/?google_login=success")
+    except Exception:
+        return redirect("/?google_error=oauth_failed")
+
+
+@app.route("/api/session", methods=["GET"])
+def api_session_user():
+    """Flask session cookie'sinden aktif kullaniciyi frontend'e verir."""
+    token = session.get("session_token") or session.pop("google_login_token", "")
+    if not token:
+        return api_response(False, "Aktif oturum yok", None, HTTPStatus.UNAUTHORIZED)
+    with connect() as db:
+        row = db.execute(
+            """
+            SELECT users.id, users.google_id, users.full_name, users.name, users.email, users.phone,
+                   users.profile_picture, users.role, users.created_at, users.is_banned
+            FROM sessions
+            JOIN users ON users.id = sessions.user_id
+            WHERE sessions.token = ?
+            """,
+            (token,),
+        ).fetchone()
+    if not row or row["is_banned"]:
+        session.clear()
+        return api_response(False, "Aktif oturum yok", None, HTTPStatus.UNAUTHORIZED)
+    return api_response(True, "Oturum aktif", {"token": token, "user": row_to_dict(row)})
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    """Hem bearer token'i hem Flask session cookie'sini kapatir."""
+    auth = request.headers.get("Authorization", "")
+    token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+    token = token or session.get("session_token", "")
+    if token:
+        with connect() as db:
+            db.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            db.commit()
+    session.clear()
+    return api_response(True, "Çıkış yapıldı", {})
 
 
 @app.route("/api/site/content", methods=["GET"])

@@ -81,6 +81,33 @@ function saveUserSession(token,user,remember){
   localStorage.setItem('gvRememberMe',remember ? '1' : '0');
 }
 
+async function restoreServerSession(){
+  // Google OAuth donusunden sonra Flask session cookie'sindeki kullaniciyi alir.
+  if(userToken)return;
+  const params=new URLSearchParams(location.search);
+  const googleError=params.get('google_error');
+  if(googleError){
+    toast('Google ile giriş tamamlanamadı. OAuth ayarlarını kontrol edin.','err');
+    history.replaceState({},'',location.pathname);
+    return;
+  }
+  try{
+    const res=await fetch('/api/session',{credentials:'same-origin'});
+    const payload=await res.json();
+    if(!res.ok || payload.success!==true)return;
+    userToken=payload.data.token;
+    currentUser=payload.data.user;
+    const remember=localStorage.getItem('gvGoogleRemember')==='1' || localStorage.getItem('gvRememberMe')==='1';
+    saveUserSession(userToken,currentUser,remember);
+    if(params.get('google_login')==='success'){
+      toast('Google ile giriş yapıldı.','ok');
+      history.replaceState({},'',location.pathname);
+    }
+  }catch(e){
+    console.warn('Sunucu oturumu okunamadı:',e);
+  }
+}
+
 async function loadSiteContent(){
   // Admin uygulamasindan duzenlenen site yazilarini API'den ceker.
   try{
@@ -333,7 +360,7 @@ function renderProfile(){
   document.getElementById('profileName').textContent=user.full_name || 'Üye';
   document.getElementById('profileEmail').textContent=[user.email,user.phone].filter(Boolean).join(' • ') || 'Profil bilgileri';
   const avatar=document.getElementById('profileAvatar');
-  const saved=currentUser?.avatar || localStorage.getItem(`gvAvatar:${user.email}`) || '';
+  const saved=currentUser?.avatar || user.profile_picture || currentUser?.profile_picture || localStorage.getItem(`gvAvatar:${user.email}`) || '';
   avatar.innerHTML=saved ? `<img src="${saved}" alt="Profil fotoğrafı">` : (user.full_name || 'GV').split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase();
   const addressList=document.getElementById('addressList');
   addressList.innerHTML=PROFILE.addresses.length ? PROFILE.addresses.map(a=>`
@@ -485,7 +512,7 @@ function updateAuthUI(){
     if(label)label.textContent='Admin';
     if(logoutBtn)logoutBtn.style.display='inline-flex';
   }else if(currentUser){
-    if(label)label.textContent=currentUser.full_name || currentUser.email;
+    if(label)label.textContent=currentUser.full_name || currentUser.name || currentUser.email;
     if(logoutBtn)logoutBtn.style.display='inline-flex';
   }else{
     if(label)label.textContent='';
@@ -514,6 +541,7 @@ async function logout(){
   sessionStorage.removeItem('gvAdminToken');
   sessionStorage.removeItem('gvUser');
   localStorage.removeItem('gvRememberMe');
+  localStorage.removeItem('gvGoogleRemember');
   updateAuthUI();
   applyAppointmentMemberMode();
   toast('Çıkış yapıldı.','ok');
@@ -521,12 +549,9 @@ async function logout(){
 }
 
 function googleLogin(){
-  showMsg(
-    'loginOk',
-    'loginErr',
-    'err',
-    'Google ile giriş arayüzü hazır. Gerçek giriş için Google OAuth Client ID ve yönlendirme adresi bağlanmalı.'
-  );
+  const remember=document.getElementById('rememberMe')?.checked || false;
+  localStorage.setItem('gvGoogleRemember',remember ? '1' : '0');
+  window.location.href=`/login/google?remember=${remember ? '1' : '0'}`;
 }
 function setAnimal(kind,button){
   const face=document.getElementById('animalFace');
@@ -973,17 +998,32 @@ function go(id){
 }
 
 // ── İlk yükleme ───────────────────────────────────────────────────────────────
-document.getElementById('dt').min=new Date().toISOString().split('T')[0];
-document.getElementById('dt')?.addEventListener('change',loadAppointmentSlots);
-document.getElementById('rememberMe') && (document.getElementById('rememberMe').checked=localStorage.getItem('gvRememberMe')==='1');
-wireAnimalInputs();
-initWhatsAppBubble();
-updateAuthUI();
-applyAppointmentMemberMode();
-loadProducts();
-loadSiteContent();
-if(currentUser){loadProfile().catch(()=>{});}
-if(location.pathname==='/admin/login' || location.pathname==='/admin')go('home');
-if(location.pathname==='/403')go('forbidden');
-if(new URLSearchParams(location.search).get('route')==='adminLogin')go('home');
+async function bootSite(){
+  // Sayfa ilk açıldığında hem klasik üyeliği hem de Google OAuth dönüşünü hazırlar.
+  // Google girişinden dönen kullanıcı Flask session içinden okunur ve normal site oturumuna çevrilir.
+  const dateInput=document.getElementById('dt');
+  if(dateInput){
+    dateInput.min=new Date().toISOString().split('T')[0];
+    dateInput.addEventListener('change',loadAppointmentSlots);
+  }
+
+  const rememberInput=document.getElementById('rememberMe');
+  if(rememberInput){
+    rememberInput.checked=localStorage.getItem('gvRememberMe')==='1' || localStorage.getItem('gvGoogleRemember')==='1';
+  }
+
+  wireAnimalInputs();
+  initWhatsAppBubble();
+  await restoreServerSession();
+  updateAuthUI();
+  applyAppointmentMemberMode();
+  loadProducts();
+  loadSiteContent();
+  if(currentUser){loadProfile().catch(()=>{});}
+  if(location.pathname==='/admin/login' || location.pathname==='/admin')go('home');
+  if(location.pathname==='/403')go('forbidden');
+  if(new URLSearchParams(location.search).get('route')==='adminLogin')go('home');
+}
+
+bootSite();
 
