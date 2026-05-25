@@ -17,9 +17,9 @@
 // su sekilde dusun: once global durumlar kurulur, sonra sepet/urun/profil
 // fonksiyonlari gelir, en sonda da sayfa gecislerini yoneten go() fonksiyonu var.
 let PRODUCTS = [];
-let currentUser = JSON.parse(localStorage.getItem('gvUser') || 'null');
-let userToken = localStorage.getItem('gvUserToken') || '';
-let adminToken = localStorage.getItem('gvAdminToken') || '';
+let currentUser = JSON.parse(localStorage.getItem('gvUser') || sessionStorage.getItem('gvUser') || 'null');
+let userToken = localStorage.getItem('gvUserToken') || sessionStorage.getItem('gvUserToken') || '';
+let adminToken = localStorage.getItem('gvAdminToken') || sessionStorage.getItem('gvAdminToken') || '';
 let PROFILE = {addresses:[], pets:[]};
 let PENDING_ORDER = null;
 let SITE_REVIEWS = [];
@@ -68,6 +68,17 @@ function closeMobileMenu(){
 function authHeaders(extra={}){
   const token=userToken || adminToken;
   return token ? {...extra, Authorization:`Bearer ${token}`} : extra;
+}
+
+function saveUserSession(token,user,remember){
+  // Beni hatirla seciliyse oturum tarayici kapanip acilsa da kalir.
+  const persistent=remember ? localStorage : sessionStorage;
+  const temporary=remember ? sessionStorage : localStorage;
+  temporary.removeItem('gvUserToken');
+  temporary.removeItem('gvUser');
+  persistent.setItem('gvUserToken',token);
+  persistent.setItem('gvUser',JSON.stringify(user));
+  localStorage.setItem('gvRememberMe',remember ? '1' : '0');
 }
 
 async function loadSiteContent(){
@@ -499,10 +510,23 @@ async function logout(){
   localStorage.removeItem('gvUserToken');
   localStorage.removeItem('gvAdminToken');
   localStorage.removeItem('gvUser');
+  sessionStorage.removeItem('gvUserToken');
+  sessionStorage.removeItem('gvAdminToken');
+  sessionStorage.removeItem('gvUser');
+  localStorage.removeItem('gvRememberMe');
   updateAuthUI();
   applyAppointmentMemberMode();
   toast('Çıkış yapıldı.','ok');
   go('home');
+}
+
+function googleLogin(){
+  showMsg(
+    'loginOk',
+    'loginErr',
+    'err',
+    'Google ile giriş arayüzü hazır. Gerçek giriş için Google OAuth Client ID ve yönlendirme adresi bağlanmalı.'
+  );
 }
 function setAnimal(kind,button){
   const face=document.getElementById('animalFace');
@@ -852,6 +876,7 @@ async function submitLogin(){
   // Normal uye girisi yapar, token'i localStorage'a kaydeder.
   const email=document.getElementById('lemail').value.trim();
   const password=document.getElementById('lpass').value;
+  const remember=document.getElementById('rememberMe')?.checked || false;
   if(!email.includes('@')){showMsg('loginOk','loginErr','err','Geçerli bir e-posta girin.');return;}
   if(!password){showMsg('loginOk','loginErr','err','Şifre zorunlu.');return;}
   const btn=document.getElementById('loginBtn');
@@ -863,8 +888,7 @@ async function submitLogin(){
     userToken=data.token;
     currentUser=data.user;
     currentUser.avatar=localStorage.getItem(`gvAvatar:${currentUser.email}`) || '';
-    localStorage.setItem('gvUserToken',userToken);
-    localStorage.setItem('gvUser',JSON.stringify(currentUser));
+    saveUserSession(userToken,currentUser,remember);
     showMsg('loginOk','loginErr','ok','✅ Giriş yapıldı.');
     reactPet('happy');
     updateAuthUI();
@@ -951,6 +975,7 @@ function go(id){
 // ── İlk yükleme ───────────────────────────────────────────────────────────────
 document.getElementById('dt').min=new Date().toISOString().split('T')[0];
 document.getElementById('dt')?.addEventListener('change',loadAppointmentSlots);
+document.getElementById('rememberMe') && (document.getElementById('rememberMe').checked=localStorage.getItem('gvRememberMe')==='1');
 wireAnimalInputs();
 initWhatsAppBubble();
 updateAuthUI();

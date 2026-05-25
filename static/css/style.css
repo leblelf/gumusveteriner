@@ -291,6 +291,11 @@ textarea{resize:vertical;min-height:80px}
 .auth-tabs{display:flex;gap:.5rem;margin-bottom:1rem}
 .auth-panel{display:none}
 .auth-panel.on{display:block}
+.remember-row{display:flex;align-items:center;gap:.45rem;margin:-4px 0 12px;color:var(--muted);font-size:13px}
+.remember-row input{width:auto;margin:0;accent-color:var(--teal)}
+.google-login-btn{width:100%;margin-top:.65rem;background:var(--card);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:11px 12px;font-family:'Outfit',sans-serif;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.6rem}
+.google-login-btn span{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#fff;color:#4285f4;border:1px solid var(--border2);font-weight:700}
+.google-login-btn:hover{border-color:var(--teal);box-shadow:var(--shadow)}
 .nav-user{display:none;color:var(--teal);font-size:13px;font-weight:500;background:transparent;border:0;font-family:'Outfit',sans-serif;cursor:pointer;padding:6px 10px;border-radius:20px}
 .nav-user:hover{background:var(--teal-light)}
 .admin-only{display:none}

@@ -78,7 +78,7 @@
     <div class="stats-row">
       <div class="stat"><div class="stat-n">8.500+</div><div class="stat-l">Mutlu Hasta</div></div>
       <div class="stat"><div class="stat-n">15 Yıl</div><div class="stat-l">Deneyim</div></div>
-      <div class="stat"><div class="stat-n">4.9 ★</div><div class="stat-l">Müşteri Puanı</div></div>
+      <div class="stat"><div class="stat-n">4.6 ★</div><div class="stat-l">Google Puanı</div></div>
     </div>
   </div>
 
@@ -318,7 +318,9 @@
             <input type="email" id="lemail" placeholder="ornek@email.com" data-watch-input>
             <label>Şifre</label>
             <input type="password" id="lpass" placeholder="Şifreniz" data-password-input>
+            <label class="remember-row"><input type="checkbox" id="rememberMe"> Beni hatırla</label>
             <button class="btn-submit" id="loginBtn" type="button" onclick="submitLogin()">Giriş Yap</button>
+            <button class="google-login-btn" type="button" onclick="googleLogin()"><span>G</span> Google hesabı ile giriş yap</button>
             <div class="msg-ok" id="loginOk"></div>
             <div class="msg-err" id="loginErr"></div>
           </form>
@@ -335,6 +337,7 @@
             <input type="file" id="ravatar" accept="image/*">
             <img class="avatar-preview" id="avatarPreview" alt="Profil önizleme">
             <button class="btn-submit" id="registerBtn" type="button" onclick="submitRegister()">Üye Kaydı Oluştur</button>
+            <button class="google-login-btn" type="button" onclick="googleLogin()"><span>G</span> Google hesabı ile devam et</button>
             <div class="msg-ok" id="registerOk"></div>
             <div class="msg-err" id="registerErr"></div>
           </form>
@@ -527,7 +530,7 @@
 <footer class="site-footer">
   <div>
     <strong id="site-footer-title">Samsun Gümüş Veteriner Muayenehanesi</strong><br>
-    Toptepe, Kayaaltı Sk. No:10/1, 55000 Canik / Samsun
+    <a href="https://maps.app.goo.gl/RDGddeTFrXVMFvmp7" target="_blank" rel="noopener">Toptepe, Kayaaltı Sk. No:10/1, 55000 Canik / Samsun</a>
   </div>
   <div>
     <a href="tel:+905461361433">0546 136 14 33</a> • 24 saat açık<br>
