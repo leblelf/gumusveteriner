@@ -186,7 +186,7 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final username = TextEditingController(text: 'admin');
+  final username = TextEditingController(text: 'gumusveterinermuayenehanesi@gmail.com');
   final password = TextEditingController();
   bool loading = false;
   String? error;

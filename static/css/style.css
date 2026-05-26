@@ -293,6 +293,8 @@ textarea{resize:vertical;min-height:80px}
 .auth-panel.on{display:block}
 .remember-row{display:flex;align-items:center;gap:.45rem;margin:-4px 0 12px;color:var(--muted);font-size:13px}
 .remember-row input{width:auto;margin:0;accent-color:var(--teal)}
+.forgot-link{display:block;margin:-6px 0 10px auto;padding:0;background:transparent;border:0;color:var(--teal);font-family:'Outfit',sans-serif;font-size:13px;font-weight:600;cursor:pointer}
+.forgot-link:hover{text-decoration:underline}
 .google-login-btn{width:100%;margin-top:.65rem;background:var(--card);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:11px 12px;font-family:'Outfit',sans-serif;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.6rem}
 .google-login-btn span{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#fff;color:#4285f4;border:1px solid var(--border2);font-weight:700}
 .google-login-btn:hover{border-color:var(--teal);box-shadow:var(--shadow)}
@@ -306,6 +308,7 @@ body.user-session #nb-auth,body.admin-session #nb-auth{display:none}
 .site-footer{margin:2rem 1.5rem 1.25rem;padding:1rem 1.25rem;border:1px solid var(--border);border-radius:14px;background:color-mix(in srgb,var(--card),transparent 18%);backdrop-filter:blur(10px);display:flex;gap:1rem;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px}
 .site-footer strong{color:var(--teal);font-weight:600}
 .site-footer a{color:var(--teal);font-weight:500}
+.made-by{display:inline-block;margin-top:.25rem;color:var(--muted);font-size:11px}
 .theme-toggle{border:1px solid var(--border2);background:var(--card);border-radius:50%;width:36px;height:36px;cursor:pointer}
 .auth-welcome{display:none}
 .avatar-preview{width:54px;height:54px;border-radius:50%;object-fit:cover;border:2px solid var(--teal-light);display:none;margin:.25rem 0 .75rem}

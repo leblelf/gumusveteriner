@@ -553,6 +553,57 @@ function googleLogin(){
   localStorage.setItem('gvGoogleRemember',remember ? '1' : '0');
   window.location.href=`/login/google?remember=${remember ? '1' : '0'}`;
 }
+
+async function forgotPassword(){
+  // Kullanici mail adresini girince backend tek kullanimlik sifre sifirlama linki yollar.
+  const emailInput=document.getElementById('lemail');
+  const email=(emailInput?.value || prompt('Şifre sıfırlama linki için e-posta adresinizi yazın:') || '').trim();
+  if(!email || !email.includes('@')){
+    showMsg('loginOk','loginErr','err','Şifre sıfırlama için geçerli bir e-posta girin.');
+    return;
+  }
+  try{
+    const res=await fetch('/api/forgot-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email})
+    });
+    const payload=await res.json();
+    if(!res.ok || payload.success===false)throw new Error(payload.message || 'Şifre sıfırlama maili gönderilemedi.');
+    showMsg('loginOk','loginErr','ok',payload.message || 'Şifre sıfırlama bağlantısı gönderildi.');
+  }catch(e){
+    showMsg('loginOk','loginErr','err',e.message || 'Şifre sıfırlama maili gönderilemedi.');
+  }
+}
+
+async function handlePasswordResetFromLink(){
+  // Maildeki bağlantı siteyi reset_token parametresiyle açar; yeni şifreyi burada alırız.
+  const params=new URLSearchParams(location.search);
+  const token=params.get('reset_token');
+  if(!token)return;
+  history.replaceState({},'',location.pathname);
+  const password=prompt('Yeni şifrenizi yazın:');
+  if(!password)return;
+  const again=prompt('Yeni şifrenizi tekrar yazın:');
+  if(password!==again){
+    toast('Şifreler eşleşmedi.','err');
+    return;
+  }
+  try{
+    const res=await fetch('/api/reset-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,password})
+    });
+    const payload=await res.json();
+    if(!res.ok || payload.success===false)throw new Error(payload.message || 'Şifre güncellenemedi.');
+    toast(payload.message || 'Şifreniz güncellendi.','ok');
+    go('auth');
+  }catch(e){
+    toast(e.message || 'Şifre güncellenemedi.','err');
+  }
+}
+
 function setAnimal(kind,button){
   const face=document.getElementById('animalFace');
   face.className=`animal-face ${kind}`;
@@ -1015,6 +1066,7 @@ async function bootSite(){
   wireAnimalInputs();
   initWhatsAppBubble();
   await restoreServerSession();
+  await handlePasswordResetFromLink();
   updateAuthUI();
   applyAppointmentMemberMode();
   loadProducts();

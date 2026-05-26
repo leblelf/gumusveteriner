@@ -199,6 +199,15 @@ def init_db() -> None:
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS password_resets (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
             CREATE TABLE IF NOT EXISTS user_addresses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -336,37 +345,56 @@ def verify_password(password: str, password_hash: str, password_salt: str) -> bo
 
 def seed_admin(db: sqlite3.Connection) -> None:
     """Ilk kurulumda varsayilan admin kullanicisini olusturur."""
-    email = "admin@gumusveteriner.com"
-    if db.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
+    email = "gumusveterinermuayenehanesi@gmail.com"
+    old_email = "admin@gumusveteriner.com"
+    password_hash, password_salt = hash_password("ColCvS20*")
+    now = datetime.now().isoformat(timespec="seconds")
+    current = db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+    old = db.execute("SELECT id FROM users WHERE email = ?", (old_email,)).fetchone()
+    if current:
+        db.execute(
+            "UPDATE users SET full_name = ?, password_hash = ?, password_salt = ?, role = 'admin', is_banned = 0 WHERE id = ?",
+            ("Gümüş Veteriner Muayenehanesi", password_hash, password_salt, current["id"]),
+        )
         return
-    password_hash, password_salt = hash_password("admin123")
+    if old:
+        db.execute(
+            """
+            UPDATE users
+            SET full_name = ?, email = ?, password_hash = ?, password_salt = ?, role = 'admin', is_banned = 0
+            WHERE id = ?
+            """,
+            ("Gümüş Veteriner Muayenehanesi", email, password_hash, password_salt, old["id"]),
+        )
+        return
     db.execute(
         """
         INSERT INTO users (full_name, email, phone, password_hash, password_salt, role, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (
-            "Gümüş Veteriner Admin",
-            email,
-            "",
-            password_hash,
-            password_salt,
-            "admin",
-            datetime.now().isoformat(timespec="seconds"),
-        ),
+        ("Gümüş Veteriner Muayenehanesi", email, "", password_hash, password_salt, "admin", now),
     )
 
 
 def seed_api_admin(db: sqlite3.Connection) -> None:
     """Mobil/masaustu admin uygulamasi icin ilk JWT admin hesabini olusturur."""
-    default_hash = generate_password_hash("Admin123*")
-    if db.execute("SELECT 1 FROM admins WHERE username = ?", ("admin",)).fetchone():
-        db.execute("UPDATE admins SET password_hash = ? WHERE username = ?", (default_hash, "admin"))
+    username = "gumusveterinermuayenehanesi@gmail.com"
+    legacy_username = "admin"
+    default_hash = generate_password_hash("ColCvS20*")
+    current = db.execute("SELECT id FROM admins WHERE username = ?", (username,)).fetchone()
+    legacy = db.execute("SELECT id FROM admins WHERE username = ?", (legacy_username,)).fetchone()
+    if current:
+        db.execute("UPDATE admins SET password_hash = ? WHERE id = ?", (default_hash, current["id"]))
+        if legacy:
+            db.execute("DELETE FROM admins WHERE id = ?", (legacy["id"],))
         return
-    db.execute(
-        "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
-        ("admin", default_hash),
-    )
+    if legacy:
+        db.execute(
+            "UPDATE admins SET username = ?, password_hash = ? WHERE id = ?",
+            (username, default_hash, legacy["id"]),
+        )
+        return
+    db.execute("INSERT INTO admins (username, password_hash) VALUES (?, ?)", (username, default_hash))
 
 
 def seed_site_content(db: sqlite3.Connection) -> None:
@@ -1672,6 +1700,89 @@ def api_logout():
             db.commit()
     session.clear()
     return api_response(True, "Çıkış yapıldı", {})
+
+
+@app.route("/api/forgot-password", methods=["POST"])
+def api_forgot_password():
+    """Uye sifresi unutuldugunda tek kullanimlik sifre sifirlama linki yollar."""
+    data = request.get_json(silent=True) or {}
+    try:
+        email = validate_email(data.get("email", ""))
+    except ValueError:
+        return api_response(False, "Geçerli bir e-posta girin", None, HTTPStatus.BAD_REQUEST)
+
+    # Guvenlik icin kullanici var/yok bilgisini disari vermiyoruz.
+    public_message = "E-posta sistemde kayıtlıysa şifre sıfırlama bağlantısı gönderildi."
+    with connect() as db:
+        user = db.execute("SELECT id, full_name, email FROM users WHERE email = ?", (email,)).fetchone()
+        if not user:
+            return api_response(True, public_message, {})
+
+        token = secrets.token_urlsafe(40)
+        now = datetime.now()
+        expires_at = (now + timedelta(hours=1)).isoformat(timespec="seconds")
+        db.execute(
+            """
+            INSERT INTO password_resets (token, user_id, expires_at, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (token, user["id"], expires_at, now.isoformat(timespec="seconds")),
+        )
+        db.commit()
+
+    base_url = (os.environ.get("SITE_URL") or request.host_url.rstrip("/")).rstrip("/")
+    reset_url = f"{base_url}/?reset_token={token}"
+    subject = "Gümüş Veteriner şifre sıfırlama"
+    body = (
+        f"Merhaba {user['full_name']},\n\n"
+        "Şifrenizi sıfırlamak için aşağıdaki bağlantıyı kullanabilirsiniz.\n"
+        f"{reset_url}\n\n"
+        "Bu bağlantı 1 saat geçerlidir. Talebi siz oluşturmadıysanız bu maili yok sayabilirsiniz.\n\n"
+        "Gümüş Veteriner Muayenehanesi"
+    )
+    mail_result = send_email(user["email"], subject, body)
+    if not mail_result.success:
+        return api_response(False, "Şifre sıfırlama maili gönderilemedi", {"detail": mail_result.message}, HTTPStatus.BAD_GATEWAY)
+    return api_response(True, public_message, {})
+
+
+@app.route("/api/reset-password", methods=["POST"])
+def api_reset_password():
+    """Maildeki token ile kullanicinin yeni sifresini kaydeder."""
+    data = request.get_json(silent=True) or {}
+    token = (data.get("token") or "").strip()
+    password = data.get("password") or ""
+    if not token:
+        return api_response(False, "Sıfırlama bağlantısı geçersiz", None, HTTPStatus.BAD_REQUEST)
+    try:
+        password_hash, password_salt = hash_password(password)
+    except ValueError as exc:
+        return api_response(False, str(exc), None, HTTPStatus.BAD_REQUEST)
+
+    now = datetime.now()
+    with connect() as db:
+        reset = db.execute(
+            """
+            SELECT password_resets.*, users.email
+            FROM password_resets
+            JOIN users ON users.id = password_resets.user_id
+            WHERE password_resets.token = ?
+            """,
+            (token,),
+        ).fetchone()
+        if not reset or reset["used_at"] or datetime.fromisoformat(reset["expires_at"]) < now:
+            return api_response(False, "Sıfırlama bağlantısı süresi dolmuş veya kullanılmış", None, HTTPStatus.BAD_REQUEST)
+        db.execute(
+            "UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?",
+            (password_hash, password_salt, reset["user_id"]),
+        )
+        db.execute(
+            "UPDATE password_resets SET used_at = ? WHERE token = ?",
+            (now.isoformat(timespec="seconds"), token),
+        )
+        db.execute("DELETE FROM sessions WHERE user_id = ?", (reset["user_id"],))
+        db.commit()
+    return api_response(True, "Şifreniz güncellendi. Yeni şifrenizle giriş yapabilirsiniz.", {})
 
 
 @app.route("/api/site/content", methods=["GET"])
