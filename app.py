@@ -37,6 +37,7 @@ from flask_limiter import Limiter
 from flask_limiter.errors import RateLimitExceeded
 from flask_limiter.util import get_remote_address
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -71,6 +72,7 @@ DEFAULT_APPOINTMENT_TIMES = [
 
 # Render/Railway ve Gunicorn bu degiskeni arar: `gunicorn app:app`.
 app = Flask(__name__, static_folder=None)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 app.secret_key = os.environ.get("SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY") or JWT_SECRET
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -1781,12 +1783,13 @@ def google_login():
         return redirect("/?google_error=missing_config")
     remember = request.args.get("remember") == "1"
     session["google_remember"] = remember
-    redirect_uri = url_for("google_callback", _external=True)
+    redirect_uri = url_for("google_authorized", _external=True)
     return google.authorize_redirect(redirect_uri)
 
 
+@app.route("/login/google/authorized")
 @app.route("/auth/google/callback")
-def google_callback():
+def google_authorized():
     """Google'dan donen kullaniciyi users tablosuna kaydeder veya eslestirir."""
     google = ensure_google_oauth()
     if not google:
@@ -1805,6 +1808,18 @@ def google_callback():
         return redirect("/?google_login=success")
     except Exception:
         return redirect("/?google_error=oauth_failed")
+
+
+@app.route("/logout")
+def logout_page():
+    """Google veya normal uye oturumunu kapatip ana sayfaya dondurur."""
+    token = session.get("session_token", "")
+    if token:
+        with connect() as db:
+            db.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            db.commit()
+    session.clear()
+    return redirect("/")
 
 
 @app.route("/api/session", methods=["GET"])
