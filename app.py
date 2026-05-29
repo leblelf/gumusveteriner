@@ -500,6 +500,24 @@ def seed_site_content(db: sqlite3.Connection) -> None:
         ("appointment_info", "Randevu bilgi kutusu", "Randevunuz en geç 2 saat içinde SMS ile onaylanır. İptal için 24 saat önce haber vermeniz yeterli."),
         ("blog_title", "Blog başlığı", "Blog & Bilgilendirme"),
         ("blog_subtitle", "Blog açıklaması", "Evcil hayvan sağlığı hakkında uzman bilgileri"),
+        ("blog_1_tag", "Blog 1 kategori", "Köpek Sağlığı"),
+        ("blog_1_title", "Blog 1 başlık", "Yıllık Aşı Takvimi Neden Önemli?"),
+        ("blog_1_meta", "Blog 1 bilgi", "Dr. Ahmet Yılmaz • 5 dk okuma"),
+        ("blog_2_tag", "Blog 2 kategori", "Kedi Sağlığı"),
+        ("blog_2_title", "Blog 2 başlık", "Kedilerde Diş Sağlığı: Evde Bakım Tüyoleri"),
+        ("blog_2_meta", "Blog 2 bilgi", "Dr. Fatma Öztürk • 4 dk okuma"),
+        ("blog_3_tag", "Blog 3 kategori", "Genel Bakım"),
+        ("blog_3_title", "Blog 3 başlık", "Tavşanlar İçin Doğru Beslenme Rehberi"),
+        ("blog_3_meta", "Blog 3 bilgi", "Dr. Can Arslan • 6 dk okuma"),
+        ("blog_4_tag", "Blog 4 kategori", "Kısırlaştırma"),
+        ("blog_4_title", "Blog 4 başlık", "Kısırlaştırma: Doğru Zamanlama ve Sonrası"),
+        ("blog_4_meta", "Blog 4 bilgi", "Dr. Ahmet Yılmaz • 7 dk okuma"),
+        ("blog_5_tag", "Blog 5 kategori", "Parazit Koruma"),
+        ("blog_5_title", "Blog 5 başlık", "Pire ve Kene Tedavisinde Doğru Ürün"),
+        ("blog_5_meta", "Blog 5 bilgi", "Dr. Fatma Öztürk • 3 dk okuma"),
+        ("blog_6_tag", "Blog 6 kategori", "Acil Durumlar"),
+        ("blog_6_title", "Blog 6 başlık", "Evcil Hayvanımda Acil Durum mu?"),
+        ("blog_6_meta", "Blog 6 bilgi", "Dr. Can Arslan • 5 dk okuma"),
         ("contact_title", "İletişim başlığı", "İletişim"),
         ("contact_subtitle", "İletişim açıklaması", "Her türlü soru için buradayız"),
         ("footer_title", "Footer klinik adı", "Samsun Gümüş Veteriner Muayenehanesi"),
@@ -2293,6 +2311,36 @@ def api_admin_login():
 @require_admin_api
 def api_admin_logout():
     return api_response(True, "Çıkış yapıldı", {})
+
+
+@app.route("/api/admin/profile", methods=["GET", "PATCH", "PUT"])
+@require_admin_api
+def api_admin_profile():
+    payload = decode_admin_jwt(request.headers.get("Authorization", "").removeprefix("Bearer ").strip())
+    username = (payload or {}).get("username", "")
+    if request.method == "GET":
+        return api_response(True, "Admin profili", {"username": username, "email": username})
+
+    data = request.get_json(silent=True) or {}
+    new_username = (data.get("username") or data.get("email") or username).strip().lower()
+    new_password = (data.get("password") or "").strip()
+    try:
+        validate_email(new_username)
+        password_hash = generate_password_hash(new_password) if new_password else None
+    except ValueError as exc:
+        return api_response(False, str(exc), None, HTTPStatus.BAD_REQUEST)
+
+    with connect() as db:
+        admin = db.execute("SELECT * FROM admins WHERE username = ?", (username,)).fetchone()
+        if not admin:
+            return api_response(False, "Admin bulunamadı", None, HTTPStatus.NOT_FOUND)
+        if password_hash:
+            db.execute("UPDATE admins SET username = ?, password_hash = ? WHERE id = ?", (new_username, password_hash, admin["id"]))
+        else:
+            db.execute("UPDATE admins SET username = ? WHERE id = ?", (new_username, admin["id"]))
+        db.commit()
+    token = create_admin_jwt(admin["id"], new_username)
+    return api_response(True, "Admin profili güncellendi", {"token": token, "admin": {"id": admin["id"], "username": new_username}})
 
 
 @app.route("/api/admin/products", methods=["GET"])

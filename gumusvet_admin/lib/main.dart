@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/constants/app_constants.dart';
 import 'core/network/api_service.dart';
@@ -145,12 +146,21 @@ class _AuthGateState extends State<AuthGate> {
   @override
   void initState() {
     super.initState();
-    storage.read(key: AppConstants.tokenKey).then((value) {
+    _loadSession();
+  }
+
+  Future<void> _loadSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final remember = prefs.getBool(AppConstants.rememberMeKey) ?? true;
+    if (!remember) {
+      await storage.delete(key: AppConstants.tokenKey);
+    }
+    final value = await storage.read(key: AppConstants.tokenKey);
+    if (!mounted) return;
       setState(() {
         token = value;
         loading = false;
       });
-    });
   }
 
   @override
@@ -189,7 +199,25 @@ class _LoginPageState extends State<LoginPage> {
   final username = TextEditingController(text: 'gumusveterinermuayenehanesi@gmail.com');
   final password = TextEditingController();
   bool loading = false;
+  bool rememberMe = true;
   String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberedLogin();
+  }
+
+  Future<void> _loadRememberedLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(AppConstants.savedUsernameKey);
+    final remember = prefs.getBool(AppConstants.rememberMeKey) ?? true;
+    if (!mounted) return;
+    setState(() {
+      rememberMe = remember;
+      if (saved != null && saved.isNotEmpty) username.text = saved;
+    });
+  }
 
   Future<void> login() async {
     setState(() {
@@ -204,6 +232,13 @@ class _LoginPageState extends State<LoginPage> {
       );
       final token = response['data']['token'] as String;
       await widget.storage.write(key: AppConstants.tokenKey, value: token);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(AppConstants.rememberMeKey, rememberMe);
+      if (rememberMe) {
+        await prefs.setString(AppConstants.savedUsernameKey, username.text.trim());
+      } else {
+        await prefs.remove(AppConstants.savedUsernameKey);
+      }
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -219,6 +254,26 @@ class _LoginPageState extends State<LoginPage> {
       setState(() => error = message.isEmpty ? 'Giriş başarısız.' : message);
     } finally {
       if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> forgotPassword() async {
+    final email = username.text.trim();
+    if (!email.contains('@')) {
+      setState(() => error = 'Şifre sıfırlama için e-posta adresinizi yazın.');
+      return;
+    }
+    try {
+      await ApiClient(widget.storage).request(
+        AppConstants.forgotPasswordEndpoint,
+        method: 'POST',
+        body: {'email': email},
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Şifre sıfırlama bağlantısı e-posta adresine gönderildi.')));
+    } catch (e) {
+      setState(() => error = e.toString().replaceFirst('Exception: ', ''));
     }
   }
 
@@ -254,6 +309,22 @@ class _LoginPageState extends State<LoginPage> {
                       labelText: 'Şifre',
                       prefixIcon: Icon(Icons.lock_outline),
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: rememberMe,
+                        onChanged: (value) =>
+                            setState(() => rememberMe = value ?? true),
+                      ),
+                      const Text('Beni hatırla'),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: forgotPassword,
+                        child: const Text('Şifremi unuttum'),
+                      ),
+                    ],
                   ),
                   if (error != null)
                     Padding(
@@ -315,12 +386,14 @@ class _AdminShellState extends State<AdminShell> {
       SendSmsPage(api: api),
       AppointmentSlotsPage(api: api),
       ClinicSettingsPage(storage: widget.storage),
+      AdminProfilePage(api: api, storage: widget.storage),
     ];
     final mobile = MediaQuery.sizeOf(context).width < 820;
     final content = Column(
       children: [
         TopBar(
           onLogout: logout,
+          onProfile: () => setState(() => selected = 13),
           isDark: widget.themeMode == ThemeMode.dark,
           onToggleTheme: widget.onToggleTheme,
         ),
@@ -586,11 +659,13 @@ class TopBar extends StatelessWidget {
   const TopBar({
     super.key,
     required this.onLogout,
+    required this.onProfile,
     required this.isDark,
     required this.onToggleTheme,
   });
 
   final VoidCallback onLogout;
+  final VoidCallback onProfile;
   final bool isDark;
   final VoidCallback onToggleTheme;
 
@@ -602,7 +677,7 @@ class TopBar extends StatelessWidget {
       color: appSurface(context),
       child: Row(
         children: [
-          const BrandHeader(compact: true),
+          Expanded(child: PawPatternStrip(color: appOrange(context))),
           const Spacer(),
           IconButton(
             onPressed: onToggleTheme,
@@ -628,6 +703,7 @@ class TopBar extends StatelessWidget {
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
+              if (value == 'profile') onProfile();
               if (value == 'logout') onLogout();
             },
             itemBuilder: (_) => const [
@@ -681,18 +757,88 @@ class PageHeader extends StatelessWidget {
   }
 }
 
-class DashboardPage extends StatelessWidget {
+class PawPatternStrip extends StatelessWidget {
+  const PawPatternStrip({super.key, required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final icons = [
+      Icons.pets,
+      Icons.favorite_outline,
+      Icons.cruelty_free_outlined,
+      Icons.medical_services_outlined,
+      Icons.pets,
+    ];
+    return SizedBox(
+      height: 42,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (var i = 0; i < icons.length; i++)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Icon(
+                icons[i],
+                size: i.isEven ? 17 : 14,
+                color: color.withOpacity(i.isEven ? .20 : .12),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key, required this.api});
 
   final ApiClient api;
 
   @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  final noteController = TextEditingController();
+  List<String> notes = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotes();
+  }
+
+  Future<void> _loadNotes() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => notes = prefs.getStringList(AppConstants.quickNotesKey) ??
+        ['Düşük stok ürünleri kontrol et', 'Aşı hatırlatmalarını gönder']);
+  }
+
+  Future<void> _saveNotes() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(AppConstants.quickNotesKey, notes);
+  }
+
+  void addNote() {
+    final text = noteController.text.trim();
+    if (text.isEmpty) return;
+    setState(() {
+      notes.insert(0, text);
+      noteController.clear();
+    });
+    _saveNotes();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder(
       future: Future.wait([
-        api.request(AppConstants.productsEndpoint),
-        api.request(AppConstants.servicesEndpoint),
-        api.request(AppConstants.appointmentsEndpoint),
+        widget.api.request(AppConstants.productsEndpoint),
+        widget.api.request(AppConstants.servicesEndpoint),
+        widget.api.request(AppConstants.appointmentsEndpoint),
       ]),
       builder: (context, snapshot) {
         final loading = snapshot.connectionState != ConnectionState.done;
@@ -701,6 +847,13 @@ class DashboardPage extends StatelessWidget {
         final services = data == null ? 0 : (data[1]['data'] as List).length;
         final appointments =
             data == null ? 0 : (data[2]['data'] as List).length;
+        final today = DateTime.now().toIso8601String().split('T').first;
+        final todayAppointments = data == null
+            ? <Map<String, dynamic>>[]
+            : (data[2]['data'] as List)
+                .whereType<Map<String, dynamic>>()
+                .where((item) => item['appt_date']?.toString() == today)
+                .toList();
         return ListView(
           padding: EdgeInsets.zero,
           children: [
@@ -741,20 +894,28 @@ class DashboardPage extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
+                children: [
                   Expanded(
-                      child: InfoPanel(title: 'Bugünün Akışı', lines: [
-                    '09:30 Genel muayene',
-                    '11:00 Aşı kontrolü',
-                    '14:00 Yatan hasta pansumanı'
-                  ])),
-                  SizedBox(width: 16),
+                      child: InfoPanel(
+                          title: 'Bugünün Yapılacakları',
+                          lines: todayAppointments.isEmpty
+                              ? ['Bugün için kayıtlı randevu görünmüyor.']
+                              : todayAppointments
+                                  .map((item) =>
+                                      '${item['appt_time']} • ${item['first_name']} ${item['last_name']} • ${item['service'] ?? item['pet_type']}')
+                                  .toList())),
+                  const SizedBox(width: 16),
                   Expanded(
-                      child: InfoPanel(title: 'Hızlı Notlar', lines: [
-                    'Düşük stok ürünleri kontrol et',
-                    'Aşı hatırlatmalarını gönder',
-                    'Yatan hasta raporlarını güncelle'
-                  ])),
+                    child: QuickNotesCard(
+                      notes: notes,
+                      controller: noteController,
+                      onAdd: addNote,
+                      onDelete: (index) {
+                        setState(() => notes.removeAt(index));
+                        _saveNotes();
+                      },
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -847,6 +1008,67 @@ class InfoPanel extends StatelessWidget {
   }
 }
 
+class QuickNotesCard extends StatelessWidget {
+  const QuickNotesCard({
+    super.key,
+    required this.notes,
+    required this.controller,
+    required this.onAdd,
+    required this.onDelete,
+  });
+
+  final List<String> notes;
+  final TextEditingController controller;
+  final VoidCallback onAdd;
+  final ValueChanged<int> onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Hızlı Notlar',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                        isDense: true, hintText: 'Yeni not ekle...'),
+                    onSubmitted: (_) => onAdd(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(onPressed: onAdd, child: const Text('Ekle')),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (notes.isEmpty)
+              Text('Henüz not yok.', style: TextStyle(color: appMuted(context))),
+            for (var i = 0; i < notes.length; i++)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.check_circle_outline,
+                    color: appOrange(context), size: 18),
+                title: Text(notes[i]),
+                trailing: IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => onDelete(i),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class PetListPage extends StatefulWidget {
   const PetListPage({super.key, required this.query});
 
@@ -865,6 +1087,24 @@ class _PetListPageState extends State<PetListPage> {
   int pageIndex = 0;
   PetRecord? selectedPet;
   final List<PetRecord> pets = List.of(samplePets);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadViewMode();
+  }
+
+  Future<void> _loadViewMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => grid = prefs.getString(AppConstants.petViewModeKey) == 'grid');
+  }
+
+  Future<void> _setViewMode(bool useGrid) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(AppConstants.petViewModeKey, useGrid ? 'grid' : 'list');
+    if (mounted) setState(() => grid = useGrid);
+  }
 
   List<PetRecord> get filtered {
     final q = '${widget.query} $localQuery'.trim().toLowerCase();
@@ -939,14 +1179,16 @@ class _PetListPageState extends State<PetListPage> {
                     icon: const Icon(Icons.filter_alt_outlined),
                     tooltip: 'Filtrele',
                   ),
-                  IconButton.filledTonal(
-                      onPressed: () => setState(() => grid = true),
-                      icon: const Icon(Icons.grid_view_outlined),
-                      tooltip: 'Kart görünümü'),
-                  IconButton.filled(
-                      onPressed: () => setState(() => grid = false),
-                      icon: const Icon(Icons.view_list_outlined),
-                      tooltip: 'Liste görünümü'),
+                  ViewModeButton(
+                      selected: grid,
+                      icon: Icons.grid_view_outlined,
+                      tooltip: 'Kart görünümü',
+                      onPressed: () => _setViewMode(true)),
+                  ViewModeButton(
+                      selected: !grid,
+                      icon: Icons.view_list_outlined,
+                      tooltip: 'Liste görünümü',
+                      onPressed: () => _setViewMode(false)),
                 ],
               ),
             ),
@@ -1115,6 +1357,52 @@ class _PetListPageState extends State<PetListPage> {
             child: const Text('Kaydet'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class ViewModeButton extends StatelessWidget {
+  const ViewModeButton({
+    super.key,
+    required this.selected,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onPressed,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          margin: const EdgeInsets.only(left: 6),
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            gradient: selected
+                ? LinearGradient(colors: [
+                    appOrange(context),
+                    Theme.of(context).colorScheme.secondary,
+                  ])
+                : null,
+            color: selected ? null : appSurface(context),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: appBorder(context)),
+          ),
+          child: Icon(icon,
+              color: selected
+                  ? Colors.white
+                  : Theme.of(context).colorScheme.onSurface),
+        ),
       ),
     );
   }
@@ -1493,6 +1781,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                   final item = rows[index] as Map<String, dynamic>;
                   return Card(
                     child: ListTile(
+                      onTap: () => showAppointmentDetail(item),
                       leading: const CircleAvatar(
                           backgroundColor: Color(0xFFE1F5EE),
                           child: Icon(Icons.calendar_month_outlined,
@@ -1528,6 +1817,35 @@ class _AppointmentPageState extends State<AppointmentPage> {
           ),
         ),
       ],
+    );
+  }
+
+  void showAppointmentDetail(Map<String, dynamic> item) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('${item['first_name']} ${item['last_name']}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Tarih/Saat: ${item['appt_date']} ${item['appt_time']}'),
+            const SizedBox(height: 8),
+            Text('Pet: ${item['pet_name'] ?? '-'} (${item['pet_type'] ?? '-'})'),
+            const SizedBox(height: 8),
+            Text('Talep edilen hizmet: ${item['service'] ?? 'Belirtilmedi'}'),
+            const SizedBox(height: 8),
+            Text('Not: ${item['notes']?.toString().trim().isEmpty == false ? item['notes'] : 'Not yok'}'),
+            const SizedBox(height: 8),
+            Text('Telefon: ${item['phone'] ?? '-'}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Kapat')),
+        ],
+      ),
     );
   }
 }
@@ -3117,6 +3435,116 @@ class ClinicSettingsPage extends StatelessWidget {
               'Telefon: 0546 136 14 33',
               'Instagram: @gumusvetsamsun',
             ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class AdminProfilePage extends StatefulWidget {
+  const AdminProfilePage({super.key, required this.api, required this.storage});
+
+  final ApiClient api;
+  final FlutterSecureStorage storage;
+
+  @override
+  State<AdminProfilePage> createState() => _AdminProfilePageState();
+}
+
+class _AdminProfilePageState extends State<AdminProfilePage> {
+  final email = TextEditingController();
+  final password = TextEditingController();
+  bool loading = true;
+  String? message;
+
+  @override
+  void initState() {
+    super.initState();
+    loadProfile();
+  }
+
+  Future<void> loadProfile() async {
+    try {
+      final response = await widget.api.request(AppConstants.adminProfileEndpoint);
+      email.text = response['data']?['email']?.toString() ?? '';
+    } catch (_) {
+      email.text = 'gumusveterinermuayenehanesi@gmail.com';
+    }
+    if (mounted) setState(() => loading = false);
+  }
+
+  Future<void> saveProfile() async {
+    setState(() => message = null);
+    try {
+      final response = await widget.api.request(
+        AppConstants.adminProfileEndpoint,
+        method: 'PATCH',
+        body: {
+          'email': email.text.trim(),
+          if (password.text.trim().isNotEmpty) 'password': password.text.trim(),
+        },
+      );
+      final token = response['data']?['token']?.toString();
+      if (token != null && token.isNotEmpty) {
+        await widget.storage.write(key: AppConstants.tokenKey, value: token);
+      }
+      setState(() {
+        password.clear();
+        message = 'Profil güncellendi.';
+      });
+    } catch (e) {
+      setState(() => message = e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        const PageHeader(
+          title: 'Admin Profili',
+          subtitle: 'Giriş e-postası ve şifrenizi uygulamadan güncelleyin.',
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextField(
+                          controller: email,
+                          decoration: const InputDecoration(
+                            labelText: 'Admin e-posta',
+                            prefixIcon: Icon(Icons.mail_outline),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: password,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Yeni şifre (değişmeyecekse boş bırak)',
+                            prefixIcon: Icon(Icons.lock_outline),
+                          ),
+                        ),
+                        if (message != null) ...[
+                          const SizedBox(height: 12),
+                          Text(message!, style: TextStyle(color: appOrange(context))),
+                        ],
+                        const SizedBox(height: 18),
+                        FilledButton.icon(
+                          onPressed: saveProfile,
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Profili Kaydet'),
+                        ),
+                      ],
+                    ),
+            ),
           ),
         ),
       ],

@@ -35,11 +35,15 @@ class AppConstants {
   static const String ordersEndpoint = '/api/admin/orders';
   static const String ordersUpdateEndpoint = '/api/admin/orders/update';
   static const String sendSmsEndpoint = '/api/admin/send-sms';
+  static const String adminProfileEndpoint = '/api/admin/profile';
+  static const String forgotPasswordEndpoint = '/api/forgot-password';
 
   static const String tokenKey = 'admin_token';
   static const String rememberMeKey = 'remember_me';
   static const String savedUsernameKey = 'saved_username';
   static const String themeKey = 'app_theme';
+  static const String petViewModeKey = 'pet_view_mode';
+  static const String quickNotesKey = 'quick_notes';
 
   static const double sidebarWidth = 240.0;
   static const double sidebarCollapsedWidth = 72.0;
