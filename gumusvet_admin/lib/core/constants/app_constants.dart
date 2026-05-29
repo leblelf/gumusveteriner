@@ -44,6 +44,8 @@ class AppConstants {
   static const String themeKey = 'app_theme';
   static const String petViewModeKey = 'pet_view_mode';
   static const String quickNotesKey = 'quick_notes';
+  static const String adminProfileNameKey = 'admin_profile_name';
+  static const String adminProfilePhotoKey = 'admin_profile_photo';
 
   static const double sidebarWidth = 240.0;
   static const double sidebarCollapsedWidth = 72.0;

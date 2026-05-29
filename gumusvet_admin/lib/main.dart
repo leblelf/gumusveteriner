@@ -110,6 +110,7 @@ Color appBorder(BuildContext context) =>
 Color appMuted(BuildContext context) =>
     Theme.of(context).colorScheme.onSurface.withOpacity(.62);
 Color appOrange(BuildContext context) => Theme.of(context).colorScheme.primary;
+final ValueNotifier<int> adminProfileVersion = ValueNotifier<int>(0);
 
 class ApiClient {
   // Backend API ile konusmak icin kucuk bir yardimci sinif.
@@ -414,33 +415,38 @@ class _AdminShellState extends State<AdminShell> {
               ),
             )
           : null,
-      body: Row(
+      body: Stack(
         children: [
-          if (!mobile)
-            Sidebar(
-              selected: selected,
-              onSelected: (value) => setState(() => selected = value),
-              onLogout: logout,
-            ),
-          Expanded(
-            child: mobile
-                ? Builder(
-                    builder: (context) => Column(
-                      children: [
-                        Container(
-                          height: 54,
-                          color: appSurface(context),
-                          alignment: Alignment.centerLeft,
-                          child: IconButton(
-                            icon: const Icon(Icons.menu),
-                            onPressed: () => Scaffold.of(context).openDrawer(),
-                          ),
+          const Positioned.fill(child: AnimatedPawBackground()),
+          Row(
+            children: [
+              if (!mobile)
+                Sidebar(
+                  selected: selected,
+                  onSelected: (value) => setState(() => selected = value),
+                  onLogout: logout,
+                ),
+              Expanded(
+                child: mobile
+                    ? Builder(
+                        builder: (context) => Column(
+                          children: [
+                            Container(
+                              height: 54,
+                              color: appSurface(context),
+                              alignment: Alignment.centerLeft,
+                              child: IconButton(
+                                icon: const Icon(Icons.menu),
+                                onPressed: () => Scaffold.of(context).openDrawer(),
+                              ),
+                            ),
+                            Expanded(child: content),
+                          ],
                         ),
-                        Expanded(child: content),
-                      ],
-                    ),
-                  )
-                : content,
+                      )
+                    : content,
+              ),
+            ],
           ),
         ],
       ),
@@ -522,6 +528,12 @@ class Sidebar extends StatelessWidget {
                     onTap: () => onSelected(12),
                   ),
                   SidebarTile(
+                    icon: Icons.account_circle_outlined,
+                    label: 'Admin Profili',
+                    active: selected == 13,
+                    onTap: () => onSelected(13),
+                  ),
+                  SidebarTile(
                       icon: Icons.logout,
                       label: 'Çıkış Yap',
                       active: false,
@@ -540,6 +552,94 @@ class MenuItem {
   const MenuItem(this.icon, this.label);
   final IconData icon;
   final String label;
+}
+
+class AnimatedPawBackground extends StatefulWidget {
+  const AnimatedPawBackground({super.key});
+
+  @override
+  State<AnimatedPawBackground> createState() => _AnimatedPawBackgroundState();
+}
+
+class _AnimatedPawBackgroundState extends State<AnimatedPawBackground>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller =
+        AnimationController(vsync: this, duration: const Duration(seconds: 18))
+          ..repeat();
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = appOrange(context);
+    final items = [
+      _PatternItem(Icons.pets, .12, .14, 18, .10),
+      _PatternItem(Icons.cruelty_free_outlined, .34, .10, 16, .08),
+      _PatternItem(Icons.favorite_outline, .58, .16, 14, .09),
+      _PatternItem(Icons.medical_services_outlined, .82, .12, 18, .08),
+      _PatternItem(Icons.pets, .22, .38, 15, .09),
+      _PatternItem(Icons.vaccines_outlined, .46, .43, 18, .08),
+      _PatternItem(Icons.pets, .72, .36, 14, .10),
+      _PatternItem(Icons.cruelty_free_outlined, .92, .48, 18, .07),
+      _PatternItem(Icons.favorite_outline, .16, .70, 16, .08),
+      _PatternItem(Icons.pets, .42, .78, 20, .09),
+      _PatternItem(Icons.medical_services_outlined, .64, .68, 14, .08),
+      _PatternItem(Icons.pets, .88, .82, 16, .09),
+    ];
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              return Stack(
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    Positioned(
+                      left: constraints.maxWidth * items[i].x,
+                      top: constraints.maxHeight * items[i].y +
+                          (controller.value * 2 * 3.14159 + i).sinLike() * 8,
+                      child: Transform.rotate(
+                        angle: controller.value * .35 + i,
+                        child: Icon(items[i].icon,
+                            size: items[i].size,
+                            color: color.withOpacity(items[i].opacity)),
+                      ),
+                    ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PatternItem {
+  const _PatternItem(this.icon, this.x, this.y, this.size, this.opacity);
+  final IconData icon;
+  final double x;
+  final double y;
+  final double size;
+  final double opacity;
+}
+
+extension _SoftWave on double {
+  double sinLike() {
+    final t = this % 6.28318;
+    return t < 3.14159 ? (t / 3.14159) * 2 - 1 : 1 - ((t - 3.14159) / 3.14159) * 2;
+  }
 }
 
 class SidebarTile extends StatelessWidget {
@@ -669,6 +769,14 @@ class TopBar extends StatelessWidget {
   final bool isDark;
   final VoidCallback onToggleTheme;
 
+  Future<Map<String, String>> loadProfileSummary() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'name': prefs.getString(AppConstants.adminProfileNameKey) ?? 'Dr. Gümüş',
+      'photo': prefs.getString(AppConstants.adminProfilePhotoKey) ?? '',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -685,21 +793,38 @@ class TopBar extends StatelessWidget {
                 isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
             tooltip: isDark ? 'Açık moda geç' : 'Karanlık moda geç',
           ),
-          CircleAvatar(
-            backgroundColor: const Color(0xFFE1F5EE),
-            child: Text('Profil'.substring(0, 1),
-                style: const TextStyle(color: Color(0xFF0F6E56))),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Dr. Gümüş',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
-              Text('Klinik yöneticisi',
-                  style: TextStyle(fontSize: 12, color: appMuted(context))),
-            ],
+          ValueListenableBuilder<int>(
+            valueListenable: adminProfileVersion,
+            builder: (context, _, __) => FutureBuilder<Map<String, String>>(
+              future: loadProfileSummary(),
+              builder: (context, snapshot) {
+                final name = snapshot.data?['name'] ?? 'Dr. Gümüş';
+                final photo = snapshot.data?['photo'] ?? '';
+                return Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: const Color(0xFFE1F5EE),
+                      backgroundImage:
+                          photo.startsWith('http') ? NetworkImage(photo) : null,
+                      child: photo.startsWith('http')
+                          ? null
+                          : Text(name.isEmpty ? 'P' : name[0],
+                              style: const TextStyle(color: Color(0xFF0F6E56))),
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                        Text('Klinik yöneticisi',
+                            style: TextStyle(fontSize: 12, color: appMuted(context))),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
@@ -837,20 +962,18 @@ class _DashboardPageState extends State<DashboardPage> {
     return FutureBuilder(
       future: Future.wait([
         widget.api.request(AppConstants.productsEndpoint),
-        widget.api.request(AppConstants.servicesEndpoint),
         widget.api.request(AppConstants.appointmentsEndpoint),
       ]),
       builder: (context, snapshot) {
         final loading = snapshot.connectionState != ConnectionState.done;
-        final data = snapshot.data as List<Map<String, dynamic>>?;
+        final data = snapshot.data;
         final products = data == null ? 0 : (data[0]['data'] as List).length;
-        final services = data == null ? 0 : (data[1]['data'] as List).length;
         final appointments =
-            data == null ? 0 : (data[2]['data'] as List).length;
+            data == null ? 0 : (data[1]['data'] as List).length;
         final today = DateTime.now().toIso8601String().split('T').first;
         final todayAppointments = data == null
             ? <Map<String, dynamic>>[]
-            : (data[2]['data'] as List)
+            : (data[1]['data'] as List)
                 .whereType<Map<String, dynamic>>()
                 .where((item) => item['appt_date']?.toString() == today)
                 .toList();
@@ -880,11 +1003,6 @@ class _DashboardPageState extends State<DashboardPage> {
                       title: 'Ürünler',
                       value: '$products',
                       icon: Icons.inventory_2_outlined,
-                      loading: loading),
-                  MetricCard(
-                      title: 'Hizmetler',
-                      value: '$services',
-                      icon: Icons.medical_services_outlined,
                       loading: loading),
                 ],
               ),
@@ -1086,7 +1204,7 @@ class _PetListPageState extends State<PetListPage> {
   bool grid = false;
   int pageIndex = 0;
   PetRecord? selectedPet;
-  final List<PetRecord> pets = List.of(samplePets);
+  final List<PetRecord> pets = appPets;
 
   @override
   void initState() {
@@ -1248,21 +1366,35 @@ class _PetListPageState extends State<PetListPage> {
   void showAddPet() {
     final name = TextEditingController();
     final owner = TextEditingController();
+    final tag = TextEditingController(
+        text: 'AT${DateTime.now().millisecondsSinceEpoch.toString().substring(5, 13)}');
+    final type = TextEditingController(text: 'Kedi');
+    final breed = TextEditingController();
+    final phone = TextEditingController();
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Yeni Pet Ekle'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: name,
-                decoration: const InputDecoration(labelText: 'Pet adı')),
-            const SizedBox(height: 10),
-            TextField(
-                controller: owner,
-                decoration: const InputDecoration(labelText: 'Sahip adı')),
-          ],
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: name, decoration: const InputDecoration(labelText: 'Pet adı')),
+                const SizedBox(height: 10),
+                TextField(controller: tag, decoration: const InputDecoration(labelText: 'Mikroçip / Künye No')),
+                const SizedBox(height: 10),
+                TextField(controller: type, decoration: const InputDecoration(labelText: 'Tür')),
+                const SizedBox(height: 10),
+                TextField(controller: breed, decoration: const InputDecoration(labelText: 'Irk')),
+                const SizedBox(height: 10),
+                TextField(controller: owner, decoration: const InputDecoration(labelText: 'Sahip adı')),
+                const SizedBox(height: 10),
+                TextField(controller: phone, decoration: const InputDecoration(labelText: 'Telefon')),
+              ],
+            ),
+          ),
         ),
         actions: [
           TextButton(
@@ -1276,11 +1408,11 @@ class _PetListPageState extends State<PetListPage> {
                   0,
                   PetRecord(
                       name.text.trim(),
-                      'AT${DateTime.now().millisecondsSinceEpoch.toString().substring(5, 13)}',
-                      'Kedi',
-                      'Belirtilmedi',
+                      tag.text.trim().isEmpty ? 'Künye yok' : tag.text.trim(),
+                      type.text.trim().isEmpty ? 'Belirtilmedi' : type.text.trim(),
+                      breed.text.trim().isEmpty ? 'Belirtilmedi' : breed.text.trim(),
                       owner.text.trim(),
-                      '-'),
+                      phone.text.trim().isEmpty ? '-' : phone.text.trim()),
                 );
               });
               Navigator.pop(context);
@@ -1321,21 +1453,34 @@ class _PetListPageState extends State<PetListPage> {
   void editPet(PetRecord pet) {
     final name = TextEditingController(text: pet.name);
     final owner = TextEditingController(text: pet.owner);
+    final tag = TextEditingController(text: pet.tag);
+    final type = TextEditingController(text: pet.type);
+    final breed = TextEditingController(text: pet.breed);
+    final phone = TextEditingController(text: pet.phone);
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Pet Düzenle'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: name,
-                decoration: const InputDecoration(labelText: 'Pet adı')),
-            const SizedBox(height: 10),
-            TextField(
-                controller: owner,
-                decoration: const InputDecoration(labelText: 'Sahip adı')),
-          ],
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: name, decoration: const InputDecoration(labelText: 'Pet adı')),
+                const SizedBox(height: 10),
+                TextField(controller: tag, decoration: const InputDecoration(labelText: 'Mikroçip / Künye No')),
+                const SizedBox(height: 10),
+                TextField(controller: type, decoration: const InputDecoration(labelText: 'Tür')),
+                const SizedBox(height: 10),
+                TextField(controller: breed, decoration: const InputDecoration(labelText: 'Irk')),
+                const SizedBox(height: 10),
+                TextField(controller: owner, decoration: const InputDecoration(labelText: 'Sahip adı')),
+                const SizedBox(height: 10),
+                TextField(controller: phone, decoration: const InputDecoration(labelText: 'Telefon')),
+              ],
+            ),
+          ),
         ),
         actions: [
           TextButton(
@@ -1346,8 +1491,13 @@ class _PetListPageState extends State<PetListPage> {
               final index = pets.indexOf(pet);
               if (index >= 0) {
                 setState(() {
-                  final updated = PetRecord(name.text.trim(), pet.tag, pet.type,
-                      pet.breed, owner.text.trim(), pet.phone);
+                  final updated = PetRecord(
+                      name.text.trim(),
+                      tag.text.trim(),
+                      type.text.trim(),
+                      breed.text.trim(),
+                      owner.text.trim(),
+                      phone.text.trim());
                   pets[index] = updated;
                   if (selectedPet == pet) selectedPet = updated;
                 });
@@ -1922,96 +2072,120 @@ class _HospitalizedPageState extends State<HospitalizedPage> {
     final pet = TextEditingController();
     final owner = TextEditingController();
     final phone = TextEditingController();
+    final tag = TextEditingController();
+    final type = TextEditingController(text: 'Kedi');
+    final breed = TextEditingController();
     final room = TextEditingController();
     final reason = TextEditingController();
     final treatment = TextEditingController();
     final notes = TextEditingController();
+    PetRecord? selectedRegisteredPet;
+    bool useRegisteredPet = appPets.isNotEmpty;
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Hasta Yatışı'),
-        content: SizedBox(
-          width: 520,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                    controller: pet,
-                    decoration:
-                        const InputDecoration(labelText: 'Hasta / pet adı')),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: owner,
-                    decoration: const InputDecoration(labelText: 'Sahip adı')),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: phone,
-                    decoration: const InputDecoration(labelText: 'Telefon')),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: room,
-                    decoration:
-                        const InputDecoration(labelText: 'Oda / kafes')),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: reason,
-                    decoration:
-                        const InputDecoration(labelText: 'Yatış nedeni')),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: treatment,
-                    minLines: 2,
-                    maxLines: 4,
-                    decoration:
-                        const InputDecoration(labelText: 'Uygulanacak tedavi')),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: notes,
-                    minLines: 2,
-                    maxLines: 4,
-                    decoration:
-                        const InputDecoration(labelText: 'Veteriner notu')),
-              ],
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Hasta Yatışı'),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    value: useRegisteredPet,
+                    onChanged: appPets.isEmpty
+                        ? null
+                        : (value) => setDialogState(() {
+                              useRegisteredPet = value;
+                              selectedRegisteredPet = null;
+                            }),
+                    title: const Text('Kayıtlı hasta seç'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  if (useRegisteredPet) ...[
+                    DropdownButtonFormField<PetRecord>(
+                      value: selectedRegisteredPet,
+                      decoration: const InputDecoration(labelText: 'Kayıtlı pet'),
+                      items: appPets
+                          .map((item) => DropdownMenuItem(
+                              value: item,
+                              child: Text('${item.name} • ${item.owner}')))
+                          .toList(),
+                      onChanged: (value) =>
+                          setDialogState(() => selectedRegisteredPet = value),
+                    ),
+                  ] else ...[
+                    TextField(controller: pet, decoration: const InputDecoration(labelText: 'Hasta / pet adı')),
+                    const SizedBox(height: 10),
+                    TextField(controller: tag, decoration: const InputDecoration(labelText: 'Mikroçip / Künye No')),
+                    const SizedBox(height: 10),
+                    TextField(controller: type, decoration: const InputDecoration(labelText: 'Tür')),
+                    const SizedBox(height: 10),
+                    TextField(controller: breed, decoration: const InputDecoration(labelText: 'Irk')),
+                    const SizedBox(height: 10),
+                    TextField(controller: owner, decoration: const InputDecoration(labelText: 'Sahip adı')),
+                    const SizedBox(height: 10),
+                    TextField(controller: phone, decoration: const InputDecoration(labelText: 'Telefon')),
+                  ],
+                  const SizedBox(height: 10),
+                  TextField(controller: room, decoration: const InputDecoration(labelText: 'Oda / kafes')),
+                  const SizedBox(height: 10),
+                  TextField(controller: reason, decoration: const InputDecoration(labelText: 'Yatış nedeni')),
+                  const SizedBox(height: 10),
+                  TextField(controller: treatment, minLines: 2, maxLines: 4, decoration: const InputDecoration(labelText: 'Uygulanacak tedavi')),
+                  const SizedBox(height: 10),
+                  TextField(controller: notes, minLines: 2, maxLines: 4, decoration: const InputDecoration(labelText: 'Veteriner notu')),
+                ],
+              ),
             ),
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Vazgeç')),
+            FilledButton(
+              onPressed: () {
+                final selectedPet = useRegisteredPet ? selectedRegisteredPet : null;
+                if ((selectedPet == null && pet.text.trim().isEmpty) ||
+                    treatment.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Pet adı ve uygulanacak tedavi zorunlu.')),
+                  );
+                  return;
+                }
+                final newPet = selectedPet ??
+                    PetRecord(
+                      pet.text.trim(),
+                      tag.text.trim().isEmpty ? 'Künye yok' : tag.text.trim(),
+                      type.text.trim().isEmpty ? 'Belirtilmedi' : type.text.trim(),
+                      breed.text.trim().isEmpty ? 'Belirtilmedi' : breed.text.trim(),
+                      owner.text.trim(),
+                      phone.text.trim().isEmpty ? '-' : phone.text.trim(),
+                    );
+                if (selectedPet == null && !appPets.any((item) => item.name == newPet.name && item.owner == newPet.owner)) {
+                  appPets.insert(0, newPet);
+                }
+                setState(() {
+                  records.insert(
+                    0,
+                    HospitalRecord(
+                      newPet.name,
+                      newPet.owner,
+                      reason.text.trim(),
+                      room.text.trim().isEmpty ? 'Oda belirtilmedi' : room.text.trim(),
+                      treatment.text.trim(),
+                      newPet.phone,
+                      notes.text.trim(),
+                      DateTime.now(),
+                    ),
+                  );
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Yatış Yap'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Vazgeç')),
-          FilledButton(
-            onPressed: () {
-              if (pet.text.trim().isEmpty || treatment.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Pet adı ve uygulanacak tedavi zorunlu.')),
-                );
-                return;
-              }
-              setState(() {
-                records.insert(
-                  0,
-                  HospitalRecord(
-                    pet.text.trim(),
-                    owner.text.trim(),
-                    reason.text.trim(),
-                    room.text.trim().isEmpty
-                        ? 'Oda belirtilmedi'
-                        : room.text.trim(),
-                    treatment.text.trim(),
-                    phone.text.trim(),
-                    notes.text.trim(),
-                    DateTime.now(),
-                  ),
-                );
-              });
-              Navigator.pop(context);
-            },
-            child: const Text('Yatış Yap'),
-          ),
-        ],
       ),
     );
   }
@@ -2172,6 +2346,8 @@ class _CrudListPageState extends State<CrudListPage> {
         TextEditingController(text: item?['category']?.toString() ?? 'Genel');
     final stock =
         TextEditingController(text: item?['stock']?.toString() ?? '0');
+    final imageUrl =
+        TextEditingController(text: item?['image_url']?.toString() ?? '');
     final isProduct = widget.loadPath == AppConstants.productsEndpoint;
     await showDialog(
       context: context,
@@ -2198,6 +2374,12 @@ class _CrudListPageState extends State<CrudListPage> {
                   controller: stock,
                   decoration: const InputDecoration(labelText: 'Stok'),
                   keyboardType: TextInputType.number),
+              const SizedBox(height: 10),
+              TextField(
+                  controller: imageUrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Ürün fotoğraf URL',
+                      hintText: 'https://.../urun.jpg')),
             ],
           ],
         ),
@@ -2211,7 +2393,8 @@ class _CrudListPageState extends State<CrudListPage> {
                 'name': name.text,
                 'price': double.tryParse(price.text) ?? 0,
                 'category': category.text,
-                'stock': int.tryParse(stock.text) ?? 0
+                'stock': int.tryParse(stock.text) ?? 0,
+                if (isProduct) 'image_url': imageUrl.text.trim(),
               };
               if (item == null) {
                 await widget.api
@@ -2281,10 +2464,7 @@ class _CrudListPageState extends State<CrudListPage> {
                   final item = rows[index] as Map<String, dynamic>;
                   return Card(
                     child: ListTile(
-                      leading: const CircleAvatar(
-                          backgroundColor: Color(0xFFE1F5EE),
-                          child: Icon(Icons.inventory_2_outlined,
-                              color: Color(0xFF0F6E56))),
+                      leading: ProductThumb(url: item['image_url']?.toString() ?? ''),
                       title: Text(item['name']?.toString() ?? '-',
                           style: const TextStyle(fontWeight: FontWeight.w800)),
                       subtitle: Text(
@@ -2313,6 +2493,35 @@ class _CrudListPageState extends State<CrudListPage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class ProductThumb extends StatelessWidget {
+  const ProductThumb({super.key, required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    if (url.startsWith('http')) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.network(
+          url,
+          width: 48,
+          height: 48,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const CircleAvatar(
+            backgroundColor: Color(0xFFE1F5EE),
+            child: Icon(Icons.broken_image_outlined, color: Color(0xFF0F6E56)),
+          ),
+        ),
+      );
+    }
+    return const CircleAvatar(
+      backgroundColor: Color(0xFFE1F5EE),
+      child: Icon(Icons.inventory_2_outlined, color: Color(0xFF0F6E56)),
     );
   }
 }
@@ -3453,7 +3662,9 @@ class AdminProfilePage extends StatefulWidget {
 }
 
 class _AdminProfilePageState extends State<AdminProfilePage> {
+  final displayName = TextEditingController();
   final email = TextEditingController();
+  final photoUrl = TextEditingController();
   final password = TextEditingController();
   bool loading = true;
   String? message;
@@ -3465,6 +3676,10 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
   }
 
   Future<void> loadProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    displayName.text =
+        prefs.getString(AppConstants.adminProfileNameKey) ?? 'Dr. Gümüş';
+    photoUrl.text = prefs.getString(AppConstants.adminProfilePhotoKey) ?? '';
     try {
       final response = await widget.api.request(AppConstants.adminProfileEndpoint);
       email.text = response['data']?['email']?.toString() ?? '';
@@ -3489,6 +3704,12 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
       if (token != null && token.isNotEmpty) {
         await widget.storage.write(key: AppConstants.tokenKey, value: token);
       }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          AppConstants.adminProfileNameKey, displayName.text.trim());
+      await prefs.setString(
+          AppConstants.adminProfilePhotoKey, photoUrl.text.trim());
+      adminProfileVersion.value++;
       setState(() {
         password.clear();
         message = 'Profil güncellendi.';
@@ -3516,6 +3737,35 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        TextField(
+                          controller: displayName,
+                          decoration: const InputDecoration(
+                            labelText: 'Profil adı',
+                            prefixIcon: Icon(Icons.badge_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: photoUrl,
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Profil fotoğraf URL',
+                            hintText: 'https://.../profil.jpg',
+                            prefixIcon: Icon(Icons.image_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (photoUrl.text.trim().startsWith('http')) ...[
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: CircleAvatar(
+                              radius: 34,
+                              backgroundImage:
+                                  NetworkImage(photoUrl.text.trim()),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         TextField(
                           controller: email,
                           decoration: const InputDecoration(
@@ -3717,6 +3967,8 @@ const samplePets = [
   PetRecord("Fitnat -ölü", "AT51367199", "Kedi", "Tekir", "MINE ZENGIN",
       "5413936933"),
 ];
+
+final List<PetRecord> appPets = List<PetRecord>.of(samplePets);
 
 const sampleHospitalized = [
   HospitalRecord(
