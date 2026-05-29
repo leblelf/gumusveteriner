@@ -32,11 +32,7 @@ document.addEventListener('mousemove',event=>{
   const glow=document.getElementById('cursorGlow');
   glow.style.left=`${event.clientX}px`;glow.style.top=`${event.clientY}px`;
   document.querySelectorAll('.animal-face.look').forEach(face=>{
-    const rect=face.getBoundingClientRect();
-    const x=Math.max(-6,Math.min(6,(event.clientX-(rect.left+rect.width/2))/28));
-    const y=Math.max(-5,Math.min(5,(event.clientY-(rect.top+rect.height/2))/34));
-    face.style.setProperty('--eye-x',`${x}px`);
-    face.style.setProperty('--eye-y',`${y}px`);
+    setAnimalEyes(face,event.clientX,event.clientY);
   });
 });
 
@@ -646,13 +642,22 @@ function showAuthTab(name){
   document.querySelectorAll('[data-auth-tab]').forEach(tab=>tab.classList.toggle('on',tab.dataset.authTab===name));
   document.querySelectorAll('[data-auth-panel]').forEach(panel=>panel.classList.toggle('on',panel.dataset.authPanel===name));
 }
+function setAnimalEyes(face,targetX,targetY){
+  // Goz bebeklerini yuz merkezine gore sinirli hareket ettirir; boylece goz disina tasmaz.
+  const rect=face.getBoundingClientRect();
+  const centerX=rect.left+rect.width/2;
+  const centerY=rect.top+rect.height*.45;
+  const x=Math.max(-6,Math.min(6,(targetX-centerX)/26));
+  const y=Math.max(-5,Math.min(5,(targetY-centerY)/32));
+  face.style.setProperty('--eye-x',`${x}px`);
+  face.style.setProperty('--eye-y',`${y}px`);
+}
 function trackInput(input){
   const rect=input.getBoundingClientRect();
-  const x=Math.max(-5,Math.min(5,(rect.left+rect.width/2-window.innerWidth/2)/70));
-  const y=Math.max(-4,Math.min(5,(rect.top+rect.height/2-window.innerHeight/2)/80));
+  const targetX=rect.left+Math.min(rect.width*.58,Math.max(rect.width*.35,(input.selectionStart || 0)*7+34));
+  const targetY=rect.top+rect.height/2;
   document.querySelectorAll('.animal-face').forEach(face=>{
-    face.style.setProperty('--eye-x',`${x}px`);
-    face.style.setProperty('--eye-y',`${y}px`);
+    setAnimalEyes(face,targetX,targetY);
   });
 }
 function wireAnimalInputs(){
@@ -662,8 +667,8 @@ function wireAnimalInputs(){
     input.addEventListener('blur',()=>document.querySelectorAll('.animal-face').forEach(face=>face.classList.remove('look')));
   });
   document.querySelectorAll('[data-password-input]').forEach(input=>{
-    input.addEventListener('focus',()=>document.querySelectorAll('.animal-face').forEach(face=>{face.classList.add('hide');face.classList.remove('look');}));
-    input.addEventListener('blur',()=>document.querySelectorAll('.animal-face').forEach(face=>face.classList.remove('hide')));
+    input.addEventListener('focus',()=>document.querySelectorAll('.animal-face').forEach(face=>{face.classList.add('hide');face.classList.remove('look');face.style.setProperty('--eye-x','0px');face.style.setProperty('--eye-y','0px');}));
+    input.addEventListener('blur',()=>document.querySelectorAll('.animal-face').forEach(face=>{face.classList.remove('hide');face.style.setProperty('--eye-x','0px');face.style.setProperty('--eye-y','0px');}));
   });
 }
 

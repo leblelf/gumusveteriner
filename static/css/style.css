@@ -250,8 +250,8 @@ textarea{resize:vertical;min-height:80px}
 .animal-face.panda{--fur:#fff;--patch:#1f2524;--ear:#1f2524}
 .animal-face.rabbit{--fur:#f5f2eb;--patch:#fff;--ear:#e9b7bd;border-radius:48%}
 .animal-face.fox{--fur:#e97335;--patch:#fff3e6;--ear:#b94f24;border-radius:46% 46% 42% 42%}
-.animal-face.look{transform:rotate(-3deg) translateX(-3px)}
-.animal-face.hide{transform:rotateY(180deg) translateY(3px);filter:saturate(.9)}
+.animal-face.look{transform:rotate(-2deg) translateX(-2px)}
+.animal-face.hide{transform:translateY(3px) scale(.98);filter:saturate(.92)}
 .animal-face.happy{animation:petHappy .7s ease}
 .animal-face.sad{animation:petSad .7s ease}
 .pet-ear{position:absolute;width:38px;height:54px;background:var(--ear);top:-24px;border-radius:26px 26px 10px 10px;animation:earWiggle 5s ease-in-out infinite;z-index:0}
@@ -264,13 +264,14 @@ textarea{resize:vertical;min-height:80px}
 .pet-face-core{position:absolute;inset:18px 15px 12px;background:linear-gradient(180deg,var(--fur),color-mix(in srgb,var(--fur),#fff 20%));border-radius:38px;z-index:1}
 .pet-mask{position:absolute;left:50%;bottom:18px;width:72px;height:46px;background:var(--patch);border-radius:50%;transform:translateX(-50%)}
 .panda .pet-mask{top:38px;bottom:auto;width:36px;height:26px;background:#fff}
-.pet-eye{position:absolute;top:45px;width:28px;height:28px;background:#fff;border-radius:50%;overflow:hidden;transition:.18s height,.18s transform}
+.pet-eye{position:absolute;top:45px;width:30px;height:30px;background:#fff;border:2px solid rgba(23,33,31,.08);border-radius:50%;overflow:hidden;transition:.18s transform,.18s opacity,.18s height,.18s top;transform-origin:center;box-shadow:inset 0 2px 5px rgba(23,33,31,.08)}
 .pet-eye.left{left:34px}.pet-eye.right{right:34px}
-.panda .pet-eye{background:#1f2524;width:38px;height:34px;top:39px}.panda .pet-eye.left{left:26px;transform:rotate(16deg)}.panda .pet-eye.right{right:26px;transform:rotate(-16deg)}
-.pet-pupil{position:absolute;left:8px;top:8px;width:11px;height:11px;background:#17211f;border-radius:50%;transform:translate(var(--eye-x),var(--eye-y));transition:.12s transform}
-.panda .pet-pupil{background:#fff;width:9px;height:9px;left:15px;top:11px}
-.animal-face.hide .pet-eye{height:4px;transform:translateY(12px)}
-.animal-face.hide .pet-pupil{display:none}
+.panda .pet-eye{background:#1f2524;width:38px;height:34px;top:39px;border-color:#1f2524}.panda .pet-eye.left{left:26px;transform:rotate(16deg)}.panda .pet-eye.right{right:26px;transform:rotate(-16deg)}
+.pet-pupil{position:absolute;left:50%;top:50%;width:12px;height:12px;background:#17211f;border-radius:50%;transform:translate(-50%,-50%) translate(var(--eye-x),var(--eye-y));transition:.12s transform,.12s opacity;will-change:transform}
+.pet-pupil:after{content:"";position:absolute;right:2px;top:2px;width:3px;height:3px;background:#fff;border-radius:50%;opacity:.85}
+.panda .pet-pupil{background:#fff;width:10px;height:10px;left:50%;top:50%}.panda .pet-pupil:after{background:#1f2524;opacity:.35}
+.animal-face.hide .pet-eye{height:5px;top:58px;background:#1d2422;border-color:#1d2422;border-radius:999px;transform:none!important;animation:none!important;box-shadow:none}
+.animal-face.hide .pet-pupil{opacity:0}
 .pet-nose{position:absolute;left:50%;top:78px;width:16px;height:12px;background:#1d2422;border-radius:50%;transform:translateX(-50%);z-index:2}
 .pet-mouth{position:absolute;left:50%;top:94px;width:34px;height:16px;border-bottom:3px solid #1d2422;border-radius:50%;transform:translateX(-50%);z-index:2}
 .animal-face.sad .pet-mouth{border-bottom:0;border-top:3px solid #1d2422;top:102px}
@@ -284,7 +285,10 @@ textarea{resize:vertical;min-height:80px}
 @keyframes petHappy{0%,100%{transform:scale(1)}40%{transform:scale(1.06) translateY(-5px)}}
 @keyframes petSad{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px) rotate(-2deg)}75%{transform:translateX(5px) rotate(2deg)}}
 .animal-face:not(.hide) .pet-eye{animation:blink 5.2s infinite}.animal-face:not(.hide) .pet-eye.right{animation-delay:.08s}
-@keyframes blink{0%,94%,100%{height:28px}96%{height:4px}}
+@keyframes blink{0%,94%,100%{transform:scaleY(1)}96%{transform:scaleY(.16)}}
+.panda:not(.hide) .pet-eye.left{animation:pandaBlinkLeft 5.2s infinite}.panda:not(.hide) .pet-eye.right{animation:pandaBlinkRight 5.2s infinite .08s}
+@keyframes pandaBlinkLeft{0%,94%,100%{transform:rotate(16deg) scaleY(1)}96%{transform:rotate(16deg) scaleY(.16)}}
+@keyframes pandaBlinkRight{0%,94%,100%{transform:rotate(-16deg) scaleY(1)}96%{transform:rotate(-16deg) scaleY(.16)}}
 .animal-picks{display:flex;justify-content:center;gap:.4rem;flex-wrap:wrap}
 .animal-picks button,.auth-tab{border:1px solid var(--border2);background:var(--card);color:var(--text);border-radius:20px;padding:6px 12px;cursor:pointer;font-family:'Outfit',sans-serif}
 .animal-picks button.on,.auth-tab.on{background:var(--teal);border-color:var(--teal);color:#fff}
