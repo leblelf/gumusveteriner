@@ -17,6 +17,7 @@ Railway uyumlu hale gelir.
 import json
 import hashlib
 import hmac
+import logging
 import os
 import re
 import secrets
@@ -32,7 +33,12 @@ import jwt
 from authlib.integrations.flask_client import OAuth
 from flask import Flask, Response, redirect, render_template, request, send_from_directory, session, url_for
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.errors import RateLimitExceeded
+from flask_limiter.util import get_remote_address
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 from services.email_service import EmailResult, send_email
 from services.sms_service import load_local_env, send_sms, validate_sms_message, normalize_tr_phone
@@ -55,6 +61,9 @@ DEPLOY_VERSION = (
     or "local"
 )[:12]
 SITE_URL = "https://wwwgumusvet.com"
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", 5 * 1024 * 1024))
+ALLOWED_UPLOAD_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
+ALLOWED_UPLOAD_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
 DEFAULT_APPOINTMENT_TIMES = [
     "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
     "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30",
@@ -62,16 +71,26 @@ DEFAULT_APPOINTMENT_TIMES = [
 
 # Render/Railway ve Gunicorn bu degiskeni arar: `gunicorn app:app`.
 app = Flask(__name__, static_folder=None)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY") or JWT_SECRET
+app.secret_key = os.environ.get("SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY") or JWT_SECRET
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER") or os.environ.get("RAILWAY_ENVIRONMENT")),
+    SESSION_COOKIE_SECURE=True,
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+    MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES,
 )
 CORS(app)
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["1000 per hour", "120 per minute"],
+    storage_uri=os.environ.get("RATELIMIT_STORAGE_URI", "memory://"),
+)
 oauth = OAuth(app)
 GOOGLE_OAUTH_REGISTERED = False
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+security_logger = logging.getLogger("gumus_veteriner.security")
 
 
 def connect() -> sqlite3.Connection:
@@ -257,6 +276,15 @@ def init_db() -> None:
                 password_hash TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS admin_login_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT,
+                ip_address TEXT,
+                user_agent TEXT,
+                success INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS services (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -314,6 +342,58 @@ def row_to_dict(row: sqlite3.Row) -> dict:
     return {key: row[key] for key in row.keys()}
 
 
+def get_csrf_token() -> str:
+    """Browser tabanli formlar icin session'a bagli CSRF token uretir."""
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["csrf_token"] = token
+    return token
+
+
+def csrf_required_for_request() -> bool:
+    """Tarayicidan gelen state-changing isteklerde CSRF kontrolunu zorunlu tutar."""
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return False
+    if not request.path.startswith("/api/"):
+        return False
+    if request.headers.get("Authorization", "").startswith("Bearer "):
+        return False
+    # Mobil/masaustu uygulamalar Origin/Referer gondermeyebilir; CSRF tarayici yuzeyi icindir.
+    return bool(request.headers.get("Origin") or request.headers.get("Referer"))
+
+
+def validate_upload_file(file_storage) -> str:
+    """Dosya yukleme acilirsa uzanti, mime type ve dosya adini guvenli hale getirir."""
+    filename = secure_filename(file_storage.filename or "")
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    mimetype = (file_storage.mimetype or "").lower()
+    if not filename or extension not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise ValueError("Desteklenmeyen dosya uzantısı")
+    if mimetype not in ALLOWED_UPLOAD_MIME_TYPES:
+        raise ValueError("Desteklenmeyen dosya türü")
+    return filename
+
+
+def log_admin_login_attempt(username: str, success: bool) -> None:
+    """Admin giris denemelerini hem log dosyasina hem veritabanina yazar."""
+    ip_address = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    user_agent = request.headers.get("User-Agent", "")[:250]
+    security_logger.info("admin_login username=%s success=%s ip=%s", username, success, ip_address)
+    try:
+        with connect() as db:
+            db.execute(
+                """
+                INSERT INTO admin_login_attempts (username, ip_address, user_agent, success, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (username, ip_address, user_agent, 1 if success else 0, datetime.now().isoformat(timespec="seconds")),
+            )
+            db.commit()
+    except Exception:
+        security_logger.exception("admin_login_attempt_log_failed")
+
+
 def validate_phone(phone: str) -> str:
     """Telefonu 05XXXXXXXXX formatinda zorunlu ve temiz hale getirir."""
     clean = re.sub(r"\s+", "", phone or "")
@@ -330,17 +410,18 @@ def validate_email(email: str) -> str:
 
 
 def hash_password(password: str, salt: bytes | None = None) -> tuple[str, str]:
-    """Sifreleri duz metin yerine PBKDF2 hash + salt olarak saklar."""
+    """Sifreleri duz metin yerine Werkzeug hash olarak saklar."""
     if len(password or "") < 6:
         raise ValueError("Sifre en az 6 karakter olmali")
-    salt = salt or os.urandom(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
-    return digest.hex(), salt.hex()
+    return generate_password_hash(password), "werkzeug"
 
 
 def verify_password(password: str, password_hash: str, password_salt: str) -> bool:
-    candidate, _ = hash_password(password, bytes.fromhex(password_salt))
-    return hmac.compare_digest(candidate, password_hash)
+    """Yeni Werkzeug hashlerini ve eski PBKDF2 kayitlarini dogrular."""
+    if password_salt == "werkzeug" or password_hash.startswith(("scrypt:", "pbkdf2:")):
+        return check_password_hash(password_hash, password)
+    legacy_digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(password_salt), 120_000)
+    return hmac.compare_digest(legacy_digest.hex(), password_hash)
 
 
 def seed_admin(db: sqlite3.Connection) -> None:
@@ -1523,20 +1604,50 @@ class FlaskGumusVeterinerAdapter(GumusVeterinerHandler):
 
 
 @app.before_request
-def ensure_database_ready() -> None:
+def ensure_database_ready():
     # Railway'de container ilk acildiginda data klasoru yoksa otomatik olusturulur.
     if request.path == "/health":
         return
     DB_PATH.parent.mkdir(exist_ok=True)
     init_db()
+    if csrf_required_for_request():
+        sent_token = request.headers.get("X-CSRF-Token", "")
+        if not sent_token or not hmac.compare_digest(sent_token, session.get("csrf_token", "")):
+            return api_response(False, "CSRF doğrulaması başarısız", None, HTTPStatus.FORBIDDEN)
 
 
 @app.after_request
-def add_cors_headers(response: Response) -> Response:
+def add_security_headers(response: Response) -> Response:
     # Frontend ayni domain altinda calissa da API testlerinde CORS sorunlarini engeller.
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Origin"] = os.environ.get("CORS_ORIGIN", "*")
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-Token"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self' https://wwwgumusvet.com https://gumusveteriner.onrender.com; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if request.path.startswith("/static/") or request.path.lower().endswith((".css", ".js", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico")):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif request.path in {"/", "/admin", "/admin/login"}:
+        response.headers["Cache-Control"] = "no-store"
+    response.set_cookie(
+        "csrf_token",
+        get_csrf_token(),
+        secure=True,
+        httponly=False,
+        samesite="Lax",
+        max_age=60 * 60 * 24,
+    )
     return response
 
 
@@ -1548,6 +1659,14 @@ def add_cors_headers(response: Response) -> Response:
 @app.errorhandler(Exception)
 def handle_unexpected_error(error):
     """Canli ortamda traceback gostermeden guvenli API hata cevabi doner."""
+    if isinstance(error, RateLimitExceeded):
+        body, status = api_response(False, "Çok fazla istek gönderildi. Lütfen biraz bekleyin.", None, HTTPStatus.TOO_MANY_REQUESTS)
+        return body, status
+    if isinstance(error, HTTPException):
+        if request.path.startswith("/api/"):
+            body, status = api_response(False, error.description or "İstek işlenemedi.", None, HTTPStatus(error.code or 500))
+            return body, status
+        return error
     if request.path.startswith("/api/"):
         body, status = api_response(False, "Sunucu hatası. Lütfen tekrar deneyin.", None, HTTPStatus.INTERNAL_SERVER_ERROR)
         return body, status
@@ -1560,7 +1679,7 @@ def handle_unexpected_error(error):
 @app.route("/403")
 def serve_app_index() -> str:
     # Tum tek sayfa uygulama route'lari ayni index.html dosyasini kullanir.
-    return render_template("index.html", asset_version=DEPLOY_VERSION)
+    return render_template("index.html", asset_version=DEPLOY_VERSION, csrf_token=get_csrf_token())
 
 
 @app.route("/health")
@@ -1572,6 +1691,11 @@ def health() -> tuple[str, int]:
 @app.route("/api/health")
 def api_health():
     return api_response(True, "API çalışıyor", {})
+
+
+@app.route("/api/csrf-token")
+def api_csrf_token():
+    return api_response(True, "CSRF token hazır", {"csrf_token": get_csrf_token()})
 
 
 @app.route("/api/deploy-info")
@@ -1703,6 +1827,7 @@ def api_logout():
 
 
 @app.route("/api/forgot-password", methods=["POST"])
+@limiter.limit("5 per hour")
 def api_forgot_password():
     """Uye sifresi unutuldugunda tek kullanimlik sifre sifirlama linki yollar."""
     data = request.get_json(silent=True) or {}
@@ -1747,6 +1872,7 @@ def api_forgot_password():
 
 
 @app.route("/api/reset-password", methods=["POST"])
+@limiter.limit("8 per hour")
 def api_reset_password():
     """Maildeki token ile kullanicinin yeni sifresini kaydeder."""
     data = request.get_json(silent=True) or {}
@@ -2111,6 +2237,7 @@ def api_admin_orders_update(order_id: int):
 
 @app.route("/api/admin/send-sms", methods=["POST"])
 @require_admin_api
+@limiter.limit("30 per hour")
 def api_admin_send_sms():
     data = request.get_json(silent=True) or {}
     phone = (data.get("phone") or "").strip()
@@ -2128,6 +2255,8 @@ def api_admin_send_sms():
 
 
 @app.route("/api/admin/login", methods=["POST"])
+@limiter.limit("5 per minute")
+@limiter.limit("20 per hour")
 def api_admin_login():
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or data.get("email") or "").strip().lower()
@@ -2138,6 +2267,7 @@ def api_admin_login():
     with connect() as db:
         admin = db.execute("SELECT * FROM admins WHERE username = ?", (username,)).fetchone()
         if admin and check_password_hash(admin["password_hash"], password):
+            log_admin_login_attempt(username, True)
             token = create_admin_jwt(admin["id"], admin["username"])
             data_payload = {"token": token, "admin": {"id": admin["id"], "username": admin["username"]}}
             response, status = api_response(True, "Admin girişi başarılı", data_payload)
@@ -2147,6 +2277,7 @@ def api_admin_login():
 
         legacy = db.execute("SELECT * FROM users WHERE email = ?", (username.lower(),)).fetchone()
         if legacy and legacy["role"] == "admin" and not legacy["is_banned"] and verify_password(password, legacy["password_hash"], legacy["password_salt"]):
+            log_admin_login_attempt(username, True)
             token = create_admin_jwt(legacy["id"], legacy["email"])
             data_payload = {"token": token, "admin": {"id": legacy["id"], "username": legacy["email"]}}
             response, status = api_response(True, "Admin girişi başarılı", data_payload)
@@ -2154,6 +2285,7 @@ def api_admin_login():
             response["user"] = {"id": legacy["id"], "full_name": legacy["full_name"], "email": legacy["email"], "role": "admin"}
             return response, status
 
+    log_admin_login_attempt(username, False)
     return api_response(False, "Kullanıcı adı veya şifre hatalı", None, HTTPStatus.UNAUTHORIZED)
 
 
@@ -2324,6 +2456,9 @@ def api_admin_appointments_delete(appointment_id: int):
 
 
 @app.route("/api/<path:_path>", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
+@limiter.limit("10 per minute", exempt_when=lambda: request.path not in {"/api/login", "/api/register"})
+@limiter.limit("50 per hour", exempt_when=lambda: request.path not in {"/api/login", "/api/register"})
+@limiter.limit("300 per minute")
 def flask_api(_path: str) -> Response:
     # /api/... istekleri eski handler'in GET/POST/PATCH/DELETE metodlarina yonlendirilir.
     if request.method == "OPTIONS":
@@ -2343,10 +2478,11 @@ def flask_api(_path: str) -> Response:
 @app.route("/<path:filename>")
 def serve_project_file(filename: str) -> Response | str:
     # logo.jpeg, static dosyalar ve admin/login gibi path'ler buradan servis edilir.
-    target = ROOT / filename
-    if target.is_file():
+    target = (ROOT / filename).resolve()
+    blocked_names = {".env", "requirements.txt", "Procfile"}
+    if ROOT in target.parents and target.is_file() and target.name not in blocked_names and "data" not in target.parts:
         return send_from_directory(ROOT, filename)
-    return render_template("index.html")
+    return render_template("index.html", asset_version=DEPLOY_VERSION, csrf_token=get_csrf_token())
 
 
 def main() -> None:

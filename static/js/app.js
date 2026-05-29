@@ -70,6 +70,28 @@ function authHeaders(extra={}){
   return token ? {...extra, Authorization:`Bearer ${token}`} : extra;
 }
 
+function readCookie(name){
+  // CSRF token gibi tarayici cookie degerlerini guvenli sekilde okur.
+  const target=`${name}=`;
+  return document.cookie.split(';').map(part=>part.trim()).find(part=>part.startsWith(target))?.slice(target.length) || '';
+}
+
+const nativeFetch=window.fetch.bind(window);
+window.fetch=(input,init={})=>{
+  // Ayni domain icindeki POST/PATCH/DELETE isteklerine CSRF header'i ekler.
+  const requestUrl=typeof input==='string' ? input : input.url;
+  const method=(init.method || (typeof input==='object' && input.method) || 'GET').toUpperCase();
+  const isSameOrigin=requestUrl.startsWith('/') || requestUrl.startsWith(location.origin);
+  if(isSameOrigin && !['GET','HEAD','OPTIONS'].includes(method)){
+    const headers=new Headers(init.headers || {});
+    if(!headers.has('X-CSRF-Token')){
+      headers.set('X-CSRF-Token',document.querySelector('meta[name="csrf-token"]')?.content || readCookie('csrf_token'));
+    }
+    init={...init,headers};
+  }
+  return nativeFetch(input,init);
+};
+
 function saveUserSession(token,user,remember){
   // Beni hatirla seciliyse oturum tarayici kapanip acilsa da kalir.
   const persistent=remember ? localStorage : sessionStorage;

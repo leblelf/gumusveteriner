@@ -3,6 +3,10 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.*
+!.env.example
+instance/
+backups/
 *.log
 .DS_Store
 Thumbs.db
