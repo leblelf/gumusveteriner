@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -3292,8 +3294,23 @@ class UserManagementPage extends StatefulWidget {
 }
 
 class _UserManagementPageState extends State<UserManagementPage> {
+  late final Timer _refreshTimer;
   late Future<Map<String, dynamic>> future =
       widget.api.request(AppConstants.usersEndpoint);
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) reload();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer.cancel();
+    super.dispose();
+  }
 
   void reload() =>
       setState(() => future = widget.api.request(AppConstants.usersEndpoint));
@@ -3334,10 +3351,15 @@ class _UserManagementPageState extends State<UserManagementPage> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const PageHeader(
+        PageHeader(
           title: 'Üyeler',
           subtitle:
               'Siteye kayıt olan kullanıcıların iletişim, adres ve hayvan bilgileri.',
+          action: IconButton.filledTonal(
+            tooltip: 'Üye listesini yenile',
+            onPressed: reload,
+            icon: const Icon(Icons.refresh),
+          ),
         ),
         Expanded(
           child: FutureBuilder<Map<String, dynamic>>(

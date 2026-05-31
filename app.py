@@ -55,7 +55,10 @@ from services.sms_service import load_local_env, send_sms, validate_sms_message,
 # Dosya yolları, deploy bilgileri ve uygulama genel sabitleri burada durur.
 # Render/Railway gibi servisler PORT değerini ortam değişkeni olarak verir.
 ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / "data" / "gumus_veteriner.db"
+DB_PATH = Path(
+    os.environ.get("SQLITE_DB_PATH")
+    or ROOT / "data" / "gumus_veteriner.db"
+).resolve()
 HOST = "0.0.0.0"
 load_local_env()
 PORT = int(os.environ.get("PORT", 5000))
@@ -156,7 +159,7 @@ _DB_INITIALIZED = False
 
 def connect() -> sqlite3.Connection:
     """Local SQLite veritabanına bağlanır ve satırları sözlük gibi okunabilir yapar."""
-    DB_PATH.parent.mkdir(exist_ok=True)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(DB_PATH, timeout=15)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
@@ -434,7 +437,7 @@ def ensure_database_initialized() -> None:
     with _DB_INIT_LOCK:
         if _DB_INITIALIZED:
             return
-        DB_PATH.parent.mkdir(exist_ok=True)
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         init_db()
         _DB_INITIALIZED = True
 
@@ -2928,7 +2931,7 @@ def serve_project_file(filename: str) -> Response | str:
 
 
 def main() -> None:
-    DB_PATH.parent.mkdir(exist_ok=True)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     init_db()
     server = ThreadingHTTPServer((HOST, PORT), GumusVeterinerHandler)
     print(f"Gümüş Veteriner çalışıyor: http://localhost:{PORT}")

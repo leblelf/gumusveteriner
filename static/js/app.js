@@ -453,7 +453,12 @@ async function loadProfile(){
   if(!userToken && !adminToken)return;
   const res=await fetch('/api/profile',{headers:authHeaders()});
   const data=await res.json();
-  if(!res.ok){throw new Error(data.error || 'Profil yüklenemedi.');}
+  if(res.status===401){
+    clearStoredUserSession();
+    updateAuthUI();
+    throw new Error('Oturumunuz sona erdi. Lütfen yeniden giriş yapın.');
+  }
+  if(!res.ok){throw new Error(data.error || data.message || 'Profil yüklenemedi.');}
   PROFILE=data;
   renderProfile();
   loadPurchasedProducts().catch(()=>{});
@@ -678,6 +683,18 @@ function updateAuthUI(){
     if(logoutBtn)logoutBtn.style.display='none';
     if(reviewBtn)reviewBtn.style.display='none';
   }
+}
+
+function clearStoredUserSession(){
+  // Render yeniden başlatıldığında eski token geçersiz kalabilir. Tarayıcıdaki
+  // eski oturumu temizleyerek kullanıcıyı yanıltan profil görünümünü engeller.
+  userToken='';
+  currentUser=null;
+  PROFILE={user:null,addresses:[],pets:[],appointments:[]};
+  localStorage.removeItem('gvUserToken');
+  localStorage.removeItem('gvUser');
+  sessionStorage.removeItem('gvUserToken');
+  sessionStorage.removeItem('gvUser');
 }
 
 async function logout(){
@@ -1209,7 +1226,12 @@ function go(id){
     const activeNav=document.getElementById(navMap[id]);
     if(activeNav)activeNav.classList.add('on');
   }
-  if(id==='profile'){loadProfile().catch(e=>toast(e.message || 'Profil yüklenemedi','err'));}
+  if(id==='profile'){
+    loadProfile().catch(e=>{
+      toast(e.message || 'Profil yüklenemedi','err');
+      if(!userToken)go('auth');
+    });
+  }
   if(id==='review'){loadPurchasedProducts().catch(()=>{});}
   if(id==='appt'){
     if(currentUser && !PROFILE.user){

@@ -173,6 +173,17 @@ Mevcut eski SQLite handler sorgularının PostgreSQL'e tamamen taşınması ayr�
 migration adımıdır. Bu migration tamamlanana kadar Render persistent disk ile
 `data/gumus_veteriner.db` dosyasını kalıcı tutun.
 
+Render'da SQLite kayıtlarını kalıcı tutmak için:
+
+1. Render Dashboard içinden servisi açın.
+2. `Disks` alanından yeni disk ekleyin ve mount path olarak `/var/data` yazın.
+3. Environment Variables alanına
+   `SQLITE_DB_PATH=/var/data/gumus_veteriner.db` ekleyin.
+4. Ayarları kaydedip `Manual Deploy` ile yeniden deploy edin.
+
+Persistent disk eklenmezse Render yeniden başladığında yeni üyeler ve diğer
+SQLite kayıtları kaybolabilir.
+
 ## Cloudflare Güvenlik Ayarları
 
 - SSL/TLS encryption mode: `Full`
