@@ -441,7 +441,13 @@ def ensure_database_initialized() -> None:
         if _DB_INITIALIZED:
             return
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        init_db()
+        try:
+            init_db()
+        except Exception:
+            # Eski production veritabanında beklenmeyen bir migration uyumsuzluğu
+            # varsa mevcut tablolarla siteyi çalışır tut. Hata loglarda kalır ve
+            # sonraki deploy öncesinde ayrıca incelenebilir.
+            security_logger.exception("database_init_failed_using_existing_schema")
         _DB_INITIALIZED = True
 
 
