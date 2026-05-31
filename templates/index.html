@@ -442,6 +442,44 @@
         <div class="sec-title" style="font-size:1.35rem">Kayıtlı Hayvanlar</div>
         <div class="profile-list" id="petList"><div class="skeleton"></div></div>
       </div>
+      <div class="profile-card" id="petEditCard" style="display:none">
+        <div class="sec-title" style="font-size:1.35rem">Hayvan Bilgilerini Düzenle</div>
+        <form id="petEditForm" onsubmit="return false">
+          <input type="hidden" id="petEditId">
+          <div class="frow">
+            <div><label>Adı *</label><input type="text" id="petEditName"></div>
+            <div><label>Türü *</label><select id="petEditSpecies"><option>Kedi</option><option>Köpek</option><option>Tavşan</option><option>Kuş</option><option>Diğer</option></select></div>
+          </div>
+          <label>Yaş</label><input type="text" id="petEditAge">
+          <label>Genel Not</label><textarea id="petEditNotes"></textarea>
+          <div class="frow">
+            <button class="btn-submit" type="button" onclick="updatePet()">Değişiklikleri Kaydet</button>
+            <button class="btn-submit" type="button" style="background:var(--muted)" onclick="cancelPetEdit()">Vazgeç</button>
+          </div>
+          <div class="msg-ok" id="petEditOk"></div>
+          <div class="msg-err" id="petEditErr"></div>
+        </form>
+      </div>
+      <div class="profile-card">
+        <div class="sec-title" style="font-size:1.35rem">Hayvan Sağlık Kaydı Ekle</div>
+        <div class="info-box">Hastalık, aşı, tedavi, alerji ve ilaç bilgilerini hayvanınızın sağlık dosyasına ekleyebilirsiniz.</div>
+        <form id="petHealthForm" onsubmit="return false">
+          <label>Hayvan *</label><select id="petHealthPet"><option value="">Hayvan seçin...</option></select>
+          <div class="frow">
+            <div><label>Kayıt Türü *</label><select id="petHealthType"><option value="disease">Hastalık</option><option value="vaccine">Aşı</option><option value="treatment">Tedavi</option><option value="allergy">Alerji</option><option value="medicine">İlaç</option><option value="note">Not</option></select></div>
+            <div><label>Tarih *</label><input type="date" id="petHealthDate"></div>
+          </div>
+          <label>Başlık *</label><input type="text" id="petHealthTitle" placeholder="Örn: Karma aşı uygulandı">
+          <label>Detay</label><textarea id="petHealthDetails" placeholder="Belirtiler, kullanılan ilaç, veteriner notu..."></textarea>
+          <button class="btn-submit" type="button" onclick="submitPetHealthRecord()">Sağlık Kaydını Ekle</button>
+          <div class="msg-ok" id="petHealthOk"></div>
+          <div class="msg-err" id="petHealthErr"></div>
+        </form>
+      </div>
+      <div class="profile-card">
+        <div class="sec-title" style="font-size:1.35rem">Randevularım</div>
+        <div class="profile-list" id="profileAppointmentList"><div class="skeleton"></div></div>
+      </div>
     </div>
   </div>
 </div>

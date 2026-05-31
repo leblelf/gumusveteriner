@@ -415,10 +415,38 @@ function renderProfile(){
     <div class="profile-item">
       <div class="profile-item-head">
         <div><strong>${p.name} • ${p.species}</strong><small>${p.age || 'Yaş belirtilmedi'}</small></div>
-        <button class="danger-mini" onclick="deletePet(${p.id})">Sil</button>
+        <div>
+          <button class="danger-mini" style="background:var(--teal);margin-right:.35rem" onclick="beginPetEdit(${p.id})">Düzenle</button>
+          <button class="danger-mini" onclick="deletePet(${p.id})">Sil</button>
+        </div>
       </div>
       <div>${p.notes || ''}</div>
+      <div style="margin-top:.85rem"><strong>Sağlık Geçmişi</strong></div>
+      ${(p.health_records || []).length ? p.health_records.map(record=>`
+        <div class="info-box" style="margin:.45rem 0 0;padding:.65rem">
+          <div class="profile-item-head">
+            <div><strong>${record.record_type}: ${record.title}</strong><small>${record.record_date}</small></div>
+            <button class="danger-mini" onclick="deletePetHealthRecord(${p.id},${record.id})">Sil</button>
+          </div>
+          <div>${record.details || ''}</div>
+        </div>`).join('') : '<small>Henüz sağlık kaydı bulunmuyor.</small>'}
     </div>`).join('') : '<div class="info-box" style="margin:0">Henüz kayıtlı hayvan yok.</div>';
+  const healthPetSelect=document.getElementById('petHealthPet');
+  if(healthPetSelect){
+    const selected=healthPetSelect.value;
+    healthPetSelect.innerHTML='<option value="">Hayvan seçin...</option>'+PROFILE.pets.map(p=>`<option value="${p.id}">${p.name} • ${p.species}</option>`).join('');
+    if(PROFILE.pets.some(p=>String(p.id)===selected))healthPetSelect.value=selected;
+  }
+  const appointmentList=document.getElementById('profileAppointmentList');
+  const statusLabels={pending:'Onay bekliyor',confirmed:'Onaylandı',cancelled:'İptal edildi',completed:'Tamamlandı'};
+  appointmentList.innerHTML=(PROFILE.appointments || []).length ? PROFILE.appointments.map(item=>`
+    <div class="profile-item">
+      <div class="profile-item-head">
+        <div><strong>${item.appt_date} • ${item.appt_time}</strong><small>${item.pet_name || item.pet_type || 'Hayvan'} • ${item.service}</small></div>
+        <span class="tag">${statusLabels[item.status] || item.status}</span>
+      </div>
+      <div>${item.notes || 'Ek not bulunmuyor.'}</div>
+    </div>`).join('') : '<div class="info-box" style="margin:0">Henüz randevunuz bulunmuyor.</div>';
 }
 async function loadProfile(){
   // Giriş yapan kullanıcının profil, adres ve hayvan kayıtlarını yükler.
@@ -502,6 +530,69 @@ async function submitPet(){
     document.getElementById('petForm').reset();
     await loadProfile();
   }catch(e){showMsg('petOk','petErr','err',e.message || 'Hayvan kaydedilemedi.');}
+}
+function beginPetEdit(id){
+  const pet=(PROFILE.pets || []).find(item=>Number(item.id)===Number(id));
+  if(!pet)return;
+  document.getElementById('petEditId').value=pet.id;
+  document.getElementById('petEditName').value=pet.name || '';
+  document.getElementById('petEditSpecies').value=pet.species || 'Diğer';
+  document.getElementById('petEditAge').value=pet.age || '';
+  document.getElementById('petEditNotes').value=pet.notes || '';
+  document.getElementById('petEditCard').style.display='block';
+  document.getElementById('petEditCard').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function cancelPetEdit(){
+  document.getElementById('petEditForm').reset();
+  document.getElementById('petEditCard').style.display='none';
+}
+async function updatePet(){
+  const id=Number(document.getElementById('petEditId').value || 0);
+  const payload={
+    name:document.getElementById('petEditName').value.trim(),
+    species:document.getElementById('petEditSpecies').value,
+    age:document.getElementById('petEditAge').value.trim(),
+    notes:document.getElementById('petEditNotes').value.trim()
+  };
+  if(!id || !payload.name || !payload.species){showMsg('petEditOk','petEditErr','err','Hayvan adı ve türü zorunlu.');return;}
+  try{
+    const res=await fetch(`/api/profile/pets/${id}`,{method:'PATCH',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(!res.ok || data.success===false)throw new Error(data.message || data.error || 'Hayvan güncellenemedi.');
+    showMsg('petEditOk','petEditErr','ok','✅ Hayvan bilgileri güncellendi.');
+    await loadProfile();
+    cancelPetEdit();
+  }catch(e){showMsg('petEditOk','petEditErr','err',e.message || 'Hayvan güncellenemedi.');}
+}
+async function submitPetHealthRecord(){
+  const petId=Number(document.getElementById('petHealthPet').value || 0);
+  const payload={
+    record_type:document.getElementById('petHealthType').value,
+    record_date:document.getElementById('petHealthDate').value,
+    title:document.getElementById('petHealthTitle').value.trim(),
+    details:document.getElementById('petHealthDetails').value.trim()
+  };
+  if(!petId){showMsg('petHealthOk','petHealthErr','err','Lütfen hayvan seçin.');return;}
+  if(!payload.title){showMsg('petHealthOk','petHealthErr','err','Sağlık kaydı başlığı zorunlu.');return;}
+  try{
+    const res=await fetch(`/api/profile/pets/${petId}/health-records`,{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(!res.ok || data.success===false)throw new Error(data.message || data.error || 'Sağlık kaydı eklenemedi.');
+    showMsg('petHealthOk','petHealthErr','ok','✅ Sağlık kaydı eklendi.');
+    document.getElementById('petHealthForm').reset();
+    document.getElementById('petHealthDate').value=new Date().toISOString().split('T')[0];
+    await loadProfile();
+  }catch(e){showMsg('petHealthOk','petHealthErr','err',e.message || 'Sağlık kaydı eklenemedi.');}
+}
+async function deletePetHealthRecord(petId,recordId){
+  if(!confirm('Sağlık kaydı silinsin mi?'))return;
+  try{
+    const res=await fetch(`/api/profile/pets/${petId}/health-records/${recordId}`,{method:'DELETE',headers:authHeaders()});
+    const data=await res.json();
+    if(!res.ok || data.success===false)throw new Error(data.message || data.error || 'Sağlık kaydı silinemedi.');
+    toast('Sağlık kaydı silindi');
+    await loadProfile();
+  }catch(e){toast(e.message || 'Sağlık kaydı silinemedi.','err');}
 }
 async function deleteAddress(id){
   if(!confirm('Adres silinsin mi?'))return;
@@ -853,7 +944,8 @@ async function submitAppt(){
     pet_type:document.getElementById('pt').value || pt, pet_name:document.getElementById('pn').value,
     service:sv, appt_date:dt, appt_time:tm,
     notes:document.getElementById('nt').value,
-    save_pet:userToken && petChoice==='new'
+    save_pet:userToken && petChoice==='new',
+    pet_id:userToken && petChoice && petChoice!=='new' ? Number(petChoice) : null
   };
 
   try{
@@ -1138,6 +1230,8 @@ async function bootSite(){
     dateInput.min=new Date().toISOString().split('T')[0];
     dateInput.addEventListener('change',loadAppointmentSlots);
   }
+  const petHealthDate=document.getElementById('petHealthDate');
+  if(petHealthDate)petHealthDate.value=new Date().toISOString().split('T')[0];
 
   const rememberInput=document.getElementById('rememberMe');
   if(rememberInput){

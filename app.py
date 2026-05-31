@@ -85,6 +85,14 @@ SITE_URL = (os.environ.get("SITE_URL") or "https://wwwgumusvet.com").rstrip("/")
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", 5 * 1024 * 1024))
 ALLOWED_UPLOAD_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
 ALLOWED_UPLOAD_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+PET_HEALTH_RECORD_TYPES = {
+    "disease": "Hastalık",
+    "vaccine": "Aşı",
+    "treatment": "Tedavi",
+    "allergy": "Alerji",
+    "medicine": "İlaç",
+    "note": "Not",
+}
 DEFAULT_APPOINTMENT_TIMES = [
     "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
     "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30",
@@ -166,6 +174,8 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS appointments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                pet_id INTEGER,
                 first_name TEXT NOT NULL,
                 last_name TEXT NOT NULL,
                 phone TEXT NOT NULL,
@@ -177,7 +187,9 @@ def init_db() -> None:
                 appt_time TEXT NOT NULL,
                 notes TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id),
+                FOREIGN KEY(pet_id) REFERENCES pets(id)
             );
 
             CREATE TRIGGER IF NOT EXISTS prevent_duplicate_active_appointments_insert
@@ -306,6 +318,19 @@ def init_db() -> None:
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS pet_health_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pet_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                record_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                details TEXT,
+                record_date TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(pet_id) REFERENCES pets(id),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
             CREATE TABLE IF NOT EXISTS appointment_reminders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 appointment_id INTEGER NOT NULL,
@@ -391,6 +416,8 @@ def init_db() -> None:
         ensure_column(db, "users", "profile_picture", "TEXT")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL")
         ensure_column(db, "orders", "user_id", "INTEGER")
+        ensure_column(db, "appointments", "user_id", "INTEGER")
+        ensure_column(db, "appointments", "pet_id", "INTEGER")
         ensure_column(db, "orders", "payment_last4", "TEXT")
         ensure_column(db, "orders", "payment_status", "TEXT")
         ensure_column(db, "contacts", "reply", "TEXT")
@@ -1239,11 +1266,35 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                     "SELECT id, name, species, age, notes, created_at FROM pets WHERE user_id = ? ORDER BY id DESC",
                     (user["id"],),
                 ).fetchall()
+                pet_payload = []
+                for pet in pets:
+                    item = row_to_dict(pet)
+                    records = db.execute(
+                        """
+                        SELECT id, record_type, title, details, record_date, created_at
+                        FROM pet_health_records
+                        WHERE pet_id = ? AND user_id = ?
+                        ORDER BY record_date DESC, id DESC
+                        """,
+                        (pet["id"], user["id"]),
+                    ).fetchall()
+                    item["health_records"] = [row_to_dict(record) for record in records]
+                    pet_payload.append(item)
+                appointments = db.execute(
+                    """
+                    SELECT id, pet_id, pet_name, pet_type, service, appt_date, appt_time, notes, status, created_at
+                    FROM appointments
+                    WHERE user_id = ? OR (user_id IS NULL AND (email = ? OR phone = ?))
+                    ORDER BY appt_date DESC, appt_time DESC
+                    """,
+                    (user["id"], user["email"], user["phone"]),
+                ).fetchall()
             self.send_json(
                 {
                     "user": row_to_dict(user),
                     "addresses": [row_to_dict(row) for row in addresses],
-                    "pets": [row_to_dict(row) for row in pets],
+                    "pets": pet_payload,
+                    "appointments": [row_to_dict(row) for row in appointments],
                 }
             )
             return
@@ -1261,6 +1312,16 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
 
         now = datetime.now().isoformat(timespec="seconds")
         with connect() as db:
+            selected_pet_id = None
+            if user and data.get("pet_id"):
+                selected_pet = db.execute(
+                    "SELECT id FROM pets WHERE id = ? AND user_id = ?",
+                    (int(data["pet_id"]), user["id"]),
+                ).fetchone()
+                if not selected_pet:
+                    self.send_json({"error": "Seçilen hayvan kaydı bulunamadı."}, HTTPStatus.BAD_REQUEST)
+                    return
+                selected_pet_id = selected_pet["id"]
             if user and data.get("save_pet"):
                 pet_name = (data.get("pet_name") or "").strip()
                 pet_species = (data.get("pet_type") or "").strip()
@@ -1269,14 +1330,16 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                         "SELECT id FROM pets WHERE user_id = ? AND LOWER(name) = LOWER(?) AND LOWER(species) = LOWER(?)",
                         (user["id"], pet_name, pet_species),
                     ).fetchone()
-                    if not existing_pet:
-                        db.execute(
+                    if existing_pet:
+                        selected_pet_id = existing_pet["id"]
+                    else:
+                        selected_pet_id = db.execute(
                             """
                             INSERT INTO pets (user_id, name, species, age, notes, created_at)
                             VALUES (?, ?, ?, '', 'Randevu ekranından eklendi', ?)
                             """,
                             (user["id"], pet_name, pet_species, now),
-                        )
+                        ).lastrowid
             if not is_appointment_time_available(db, data["appt_date"], data["appt_time"]):
                 self.send_json({"error": "Bu randevu saati dolu veya kapalı. Lutfen baska bir saat secin."}, HTTPStatus.CONFLICT)
                 return
@@ -1284,10 +1347,12 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 cursor = db.execute(
                     """
                     INSERT INTO appointments
-                    (first_name, last_name, phone, email, pet_type, pet_name, service, appt_date, appt_time, notes, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (user_id, pet_id, first_name, last_name, phone, email, pet_type, pet_name, service, appt_date, appt_time, notes, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
+                        user["id"] if user else None,
+                        selected_pet_id,
                         data["first_name"].strip(),
                         data["last_name"].strip(),
                         data["phone"],
@@ -1560,6 +1625,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         if not user:
             return
         with connect() as db:
+            db.execute("DELETE FROM pet_health_records WHERE pet_id = ? AND user_id = ?", (pet_id, user["id"]))
             cursor = db.execute("DELETE FROM pets WHERE id = ? AND user_id = ?", (pet_id, user["id"]))
             db.commit()
         if cursor.rowcount < 1:
@@ -2221,6 +2287,94 @@ def api_profile_update():
             (user["id"],),
         ).fetchone()
     return api_response(True, "Profil bilgileriniz güncellendi", row_to_dict(updated))
+
+
+@app.route("/api/profile/pets/<int:pet_id>", methods=["PATCH", "PUT"])
+def api_profile_pet_update(pet_id: int):
+    """Üyenin yalnızca kendi hayvan kaydını düzenlemesine izin verir."""
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    species = (data.get("species") or "").strip()
+    age = (data.get("age") or "").strip()
+    notes = (data.get("notes") or "").strip()
+    if not name or not species:
+        return api_response(False, "Hayvan adı ve türü zorunlu", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        cursor = db.execute(
+            """
+            UPDATE pets SET name = ?, species = ?, age = ?, notes = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (name, species, age, notes, pet_id, user["id"]),
+        )
+        db.commit()
+        pet = db.execute(
+            "SELECT id, name, species, age, notes, created_at FROM pets WHERE id = ? AND user_id = ?",
+            (pet_id, user["id"]),
+        ).fetchone()
+    if cursor.rowcount < 1 or not pet:
+        return api_response(False, "Hayvan kaydı bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Hayvan bilgileri güncellendi", row_to_dict(pet))
+
+
+@app.route("/api/profile/pets/<int:pet_id>/health-records", methods=["POST"])
+def api_profile_pet_health_add(pet_id: int):
+    """Hayvanın e-nabız benzeri sağlık geçmişine yeni kayıt ekler."""
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    data = request.get_json(silent=True) or {}
+    record_type_key = (data.get("record_type") or "note").strip().lower()
+    record_type = PET_HEALTH_RECORD_TYPES.get(record_type_key)
+    title = (data.get("title") or "").strip()
+    details = (data.get("details") or "").strip()
+    record_date = (data.get("record_date") or date.today().isoformat()).strip()
+    if not record_type:
+        return api_response(False, "Geçersiz sağlık kaydı türü", None, HTTPStatus.BAD_REQUEST)
+    if len(title) < 2:
+        return api_response(False, "Sağlık kaydı başlığı zorunlu", None, HTTPStatus.BAD_REQUEST)
+    try:
+        datetime.strptime(record_date, "%Y-%m-%d")
+    except ValueError:
+        return api_response(False, "Kayıt tarihi YYYY-MM-DD formatında olmalı", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        pet = db.execute("SELECT id FROM pets WHERE id = ? AND user_id = ?", (pet_id, user["id"])).fetchone()
+        if not pet:
+            return api_response(False, "Hayvan kaydı bulunamadı", None, HTTPStatus.NOT_FOUND)
+        cursor = db.execute(
+            """
+            INSERT INTO pet_health_records
+            (pet_id, user_id, record_type, title, details, record_date, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (pet_id, user["id"], record_type, title, details, record_date, datetime.now().isoformat(timespec="seconds")),
+        )
+        db.commit()
+        record = db.execute(
+            "SELECT id, record_type, title, details, record_date, created_at FROM pet_health_records WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+    return api_response(True, "Sağlık kaydı eklendi", row_to_dict(record), HTTPStatus.CREATED)
+
+
+@app.route("/api/profile/pets/<int:pet_id>/health-records/<int:record_id>", methods=["DELETE"])
+def api_profile_pet_health_delete(pet_id: int, record_id: int):
+    """Üyenin kendi hayvanına ait sağlık kaydını siler."""
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    with connect() as db:
+        cursor = db.execute(
+            "DELETE FROM pet_health_records WHERE id = ? AND pet_id = ? AND user_id = ?",
+            (record_id, pet_id, user["id"]),
+        )
+        db.commit()
+    if cursor.rowcount < 1:
+        return api_response(False, "Sağlık kaydı bulunamadı", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Sağlık kaydı silindi", {})
 
 
 @app.route("/api/profile/purchased-products", methods=["GET"])
