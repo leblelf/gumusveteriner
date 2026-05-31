@@ -175,6 +175,9 @@ def init_db() -> None:
         # bak; uygulama açılışında eksik yapılar otomatik tamamlanır.
         db.executescript(
             """
+            DROP TRIGGER IF EXISTS prevent_duplicate_user_email_insert;
+            DROP TRIGGER IF EXISTS prevent_duplicate_user_email_update;
+
             CREATE TABLE IF NOT EXISTS appointments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
@@ -410,10 +413,6 @@ def init_db() -> None:
             );
             """
         )
-        # Eski veritabanlarında farklı harf kullanımıyla aynı admin e-postası
-        # bulunabilir. Seed işlemi tamamlanana kadar email trigger'larını kaldır.
-        db.execute("DROP TRIGGER IF EXISTS prevent_duplicate_user_email_insert")
-        db.execute("DROP TRIGGER IF EXISTS prevent_duplicate_user_email_update")
         seed_admin(db)
         seed_api_admin(db)
         seed_site_content(db)
@@ -430,30 +429,6 @@ def init_db() -> None:
         ensure_column(db, "contacts", "reply", "TEXT")
         ensure_column(db, "contacts", "replied_at", "TEXT")
         ensure_column(db, "site_reviews", "product_name", "TEXT")
-        db.executescript(
-            """
-            CREATE TRIGGER IF NOT EXISTS prevent_duplicate_user_email_insert
-            BEFORE INSERT ON users
-            WHEN EXISTS (
-                SELECT 1 FROM users
-                WHERE LOWER(email) = LOWER(NEW.email)
-            )
-            BEGIN
-                SELECT RAISE(ABORT, 'DUPLICATE_USER_EMAIL');
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS prevent_duplicate_user_email_update
-            BEFORE UPDATE OF email ON users
-            WHEN EXISTS (
-                SELECT 1 FROM users
-                WHERE id <> NEW.id
-                  AND LOWER(email) = LOWER(NEW.email)
-            )
-            BEGIN
-                SELECT RAISE(ABORT, 'DUPLICATE_USER_EMAIL');
-            END;
-            """
-        )
         db.commit()
 
 
