@@ -44,7 +44,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final token = await ApiService.instance.token;
     final username = prefs.getString(AppConstants.savedUsernameKey);
     state = state.copyWith(
-      status: token == null || token.isEmpty ? AuthStatus.unauthenticated : AuthStatus.authenticated,
+      status: token == null || token.isEmpty
+          ? AuthStatus.unauthenticated
+          : AuthStatus.authenticated,
       token: token,
       username: username,
     );
@@ -53,7 +55,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> login(String username, String password, bool rememberMe) async {
     state = state.copyWith(status: AuthStatus.loading, errorMessage: null);
     try {
-      final response = await ApiService.instance.login(username.trim(), password);
+      final response =
+          await ApiService.instance.login(username.trim(), password);
       final token = response['data']?['token'] ?? response['token'];
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(AppConstants.rememberMeKey, rememberMe);

@@ -1,21 +1,21 @@
-// app.js
+﻿// app.js
 // Gümüş Veteriner sitesinin tüm etkileşimli JavaScript kodları burada bulunur.
 // Sayfa geçişleri, sepet, ürün yükleme, giriş/kayıt, profil, sipariş, ödeme ve admin paneli bu dosyadan yönetilir.
 
-// Bu script blogu sitenin tum etkilesimli kisimlarini yonetir:
-// - Sepet islemleri
-// - API'den urunleri cekme
-// - Randevu, iletisim, uye kayit ve giris formlari
-// - Profil adres/hayvan islemleri
-// - Siparis ve odeme akisi
-// - Admin paneli ve sayfa gecisleri
+// Bu script bloğu sitenin tüm etkileşimli kısımlarını yönetir:
+// - Sepet işlemleri
+// - API'den ürünleri çekme
+// - Randevu, iletişim, üye kayıt ve giriş formları
+// - Profil adres/hayvan işlemleri
+// - Sipariş ve ödeme akışı
+// - Admin paneli ve sayfa geçişleri
 // ── Ürün verisi API'den gelir ────────────────────────────────────────────────
 // -----------------------------------------------------------------------------
 // Okuma notu
 // -----------------------------------------------------------------------------
-// Bu dosyanin ustundeki eski yorumlar projenin ilk halinden kaldi. Asil akisi
-// su sekilde dusun: once global durumlar kurulur, sonra sepet/urun/profil
-// fonksiyonlari gelir, en sonda da sayfa gecislerini yoneten go() fonksiyonu var.
+// Bu dosyanın üstündeki eski yorumlar projenin ilk halinden kaldı. Asıl akışı
+// şu şekilde düşün: önce global durumlar kurulur, sonra sepet/ürün/profil
+// fonksiyonları gelir, en sonda da sayfa geçişlerini yöneten go() fonksiyonu var.
 let PRODUCTS = [];
 let currentUser = JSON.parse(localStorage.getItem('gvUser') || sessionStorage.getItem('gvUser') || 'null');
 let userToken = localStorage.getItem('gvUserToken') || sessionStorage.getItem('gvUserToken') || '';
@@ -37,7 +37,7 @@ document.addEventListener('mousemove',event=>{
 });
 
 function toast(message,type='ok'){
-  // Sayfanin sag altinda kisa basari/hata bildirimi gosterir.
+  // Sayfanın sağ altında kısa başarı/hata bildirimi gösterir.
   const wrap=document.getElementById('toastWrap');
   const item=document.createElement('div');
   item.className='toast';
@@ -51,13 +51,13 @@ function toggleTheme(){
   localStorage.setItem('gvTheme',next);
 }
 function toggleMobileMenu(){
-  // Telefonda ust menuyu acar/kapatir.
+  // Telefonda üst menüyü açar/kapatır.
   const nav=document.querySelector('nav');
   nav?.classList.toggle('mobile-open');
   document.getElementById('mobileMenuScrim')?.classList.toggle('open', nav?.classList.contains('mobile-open'));
 }
 function closeMobileMenu(){
-  // Bir sayfaya tiklandiginda mobil menuyu kapatir.
+  // Bir sayfaya tıklandığında mobil menüyü kapatır.
   document.querySelector('nav')?.classList.remove('mobile-open');
   document.getElementById('mobileMenuScrim')?.classList.remove('open');
 }
@@ -67,14 +67,14 @@ function authHeaders(extra={}){
 }
 
 function readCookie(name){
-  // CSRF token gibi tarayici cookie degerlerini guvenli sekilde okur.
+  // CSRF token gibi tarayıcı cookie değerlerini güvenli şekilde okur.
   const target=`${name}=`;
   return document.cookie.split(';').map(part=>part.trim()).find(part=>part.startsWith(target))?.slice(target.length) || '';
 }
 
 const nativeFetch=window.fetch.bind(window);
 window.fetch=(input,init={})=>{
-  // Ayni domain icindeki POST/PATCH/DELETE isteklerine CSRF header'i ekler.
+  // Aynı domain içindeki POST/PATCH/DELETE isteklerine CSRF header'ı ekler.
   const requestUrl=typeof input==='string' ? input : input.url;
   const method=(init.method || (typeof input==='object' && input.method) || 'GET').toUpperCase();
   const isSameOrigin=requestUrl.startsWith('/') || requestUrl.startsWith(location.origin);
@@ -89,7 +89,7 @@ window.fetch=(input,init={})=>{
 };
 
 function saveUserSession(token,user,remember){
-  // Beni hatirla seciliyse oturum tarayici kapanip acilsa da kalir.
+  // Beni hatırla seçiliyse oturum tarayıcı kapanıp açılsa da kalır.
   const persistent=remember ? localStorage : sessionStorage;
   const temporary=remember ? sessionStorage : localStorage;
   temporary.removeItem('gvUserToken');
@@ -100,7 +100,7 @@ function saveUserSession(token,user,remember){
 }
 
 async function restoreServerSession(){
-  // Google OAuth donusunden sonra Flask session cookie'sindeki kullaniciyi alir.
+  // Google OAuth dönüşünden sonra Flask session cookie'sindeki kullanıcıyı alır.
   if(userToken)return;
   const params=new URLSearchParams(location.search);
   const googleError=params.get('google_error');
@@ -127,7 +127,7 @@ async function restoreServerSession(){
 }
 
 async function loadSiteContent(){
-  // Admin uygulamasindan duzenlenen site yazilarini API'den ceker.
+  // Admin uygulamasından düzenlenen site yazılarını API'den çeker.
   try{
     const res=await fetch('/api/site/content');
     const payload=await res.json();
@@ -219,7 +219,7 @@ let cart = {};  // {id: {product, qty}}
 
 // ── Sepet işlemleri ──────────────────────────────────────────────────────────
 function addCart(id,name,price,emoji){
-  // Urunu sepete ekler; zaten varsa miktarini 1 artirir.
+  // Ürünü sepete ekler; zaten varsa miktarını 1 artırır.
   if(cart[id]){cart[id].qty++;}
   else{cart[id]={id,name,price,emoji,qty:1};}
   updateCartUI();
@@ -242,7 +242,7 @@ function cartTotal(){return cartItems().reduce((s,i)=>s+i.price*i.qty,0);}
 function cartCount(){return cartItems().reduce((s,i)=>s+i.qty,0);}
 
 function updateCartUI(){
-  // Sepet rozeti, sepet paneli ve toplam tutari ayni anda gunceller.
+  // Sepet rözeti, sepet paneli ve toplam tutarı aynı anda günceller.
   const count=cartCount();
   const badge=document.getElementById('cart-count');
   badge.textContent=count;
@@ -287,13 +287,13 @@ function showCartFlash(){
 }
 
 function renderOrderSummary(){
-  // Siparis sayfasindaki sepet ozeti. Burada da adet artir/azalt ve sil islemi yapilabilir.
+  // Sipariş sayfasındaki sepet özeti. Burada da adet artir/azalt ve sil işlemi yapilabilir.
   const list=document.getElementById('order-items-list');
   const total=document.getElementById('order-total');
   if(!list || !total)return;
   const items=cartItems();
   if(!items.length){
-    list.innerHTML='<div class="cart-empty" style="padding:1rem">Sepetiniz bos.<br><small>Urunler sayfasindan ekleyin.</small></div>';
+    list.innerHTML='<div class="cart-empty" style="padding:1rem">Sepetiniz boş.<br><small>Urunler sayfasindan ekleyin.</small></div>';
     total.textContent='₺0';
     return;
   }
@@ -375,7 +375,7 @@ function filterCat(cat,btn){
 }
 
 async function loadProducts(){
-  // Urun listesini backend API'den alir ve ana sayfa/urunler bolumune basar.
+  // Urun listesini backend API'den alır ve ana sayfa/ürünler bölümüne basar.
   try{
     const res=await fetch('/api/products');
     const data=await res.json();
@@ -391,7 +391,7 @@ async function loadProducts(){
 
 // ── Profil, adres ve hayvan kayıtları ────────────────────────────────────────
 function renderProfile(){
-  // Profil sayfasinda kullanici bilgisi, adresler ve kayitli hayvanlar gosterilir.
+  // Profil sayfasında kullanıcı bilgisi, adresler ve kayıtlı hayvanlar gösterilir.
   const user=PROFILE.user || currentUser || {};
   document.getElementById('profileName').textContent=user.full_name || 'Üye';
   document.getElementById('profileEmail').textContent=[user.email,user.phone].filter(Boolean).join(' • ') || 'Profil bilgileri';
@@ -418,7 +418,7 @@ function renderProfile(){
     </div>`).join('') : '<div class="info-box" style="margin:0">Henüz kayıtlı hayvan yok.</div>';
 }
 async function loadProfile(){
-  // Giris yapan kullanicinin profil, adres ve hayvan kayitlarini yukler.
+  // Giriş yapan kullanıcının profil, adres ve hayvan kayıtlarını yükler.
   if(!userToken && !adminToken)return;
   const res=await fetch('/api/profile',{headers:authHeaders()});
   const data=await res.json();
@@ -523,7 +523,7 @@ async function goOrder(){
   if(currentUser && !PROFILE.user){
     try{await loadProfile();}catch(e){toast(e.message || 'Profil yüklenemedi','err');}
   }
-  // Siparis ozeti render edilir; kullanici bu ekranda adetleri degistirebilir.
+  // Sipariş özeti render edilir; kullanıcı bu ekranda adetleri değiştirebilir.
   renderOrderSummary();
   prepareOrderForm();
   go('order');
@@ -557,14 +557,14 @@ function updateAuthUI(){
 }
 
 async function logout(){
-  // Oturumu kapatir, tarayicidaki tokenlari temizler ve ana sayfaya doner.
+  // Oturumu kapatır, tarayıcıdaki tokenlari temizler ve ana sayfaya döner.
   try{
     const token=userToken || adminToken;
     if(token){
       await fetch('/api/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`}});
     }
   }catch(e){
-    console.warn('Cikis istegi tamamlanamadi:',e);
+    console.warn('Çıkış istegi tamamlanamadi:',e);
   }
   userToken='';
   adminToken='';
@@ -591,7 +591,7 @@ function googleLogin(){
 }
 
 async function forgotPassword(){
-  // Kullanici mail adresini girince backend tek kullanimlik sifre sifirlama linki yollar.
+  // Kullanıcı mail adresini girince backend tek kullanımlık şifre sıfırlama linki yollar.
   const emailInput=document.getElementById('lemail');
   const email=(emailInput?.value || prompt('Şifre sıfırlama linki için e-posta adresinizi yazın:') || '').trim();
   if(!email || !email.includes('@')){
@@ -661,7 +661,7 @@ function showAuthTab(name){
   document.querySelectorAll('[data-auth-panel]').forEach(panel=>panel.classList.toggle('on',panel.dataset.authPanel===name));
 }
 function setAnimalEyes(face,targetX,targetY){
-  // Goz bebeklerini yuz merkezine gore sinirli hareket ettirir; boylece goz disina tasmaz.
+  // Göz bebeklerini yüz merkezine gore sınırlı hareket ettirir; böylece göz dışına taşmaz.
   const rect=face.getBoundingClientRect();
   const centerX=rect.left+rect.width/2;
   const centerY=rect.top+rect.height*.45;
@@ -864,7 +864,7 @@ async function submitPurchaseReview(){
 }
 // ── Siparişten ödeme sayfasına geçiş ─────────────────────────────────────────
 async function goPayment(){
-  // Teslimat bilgilerini kontrol eder; her sey tamamsa odeme sayfasina gecer.
+  // Teslimat bilgilerini kontrol eder; her şey tamamsa ödeme sayfasına geçer.
   const fn=document.getElementById('ofn').value.trim();
   const ln=document.getElementById('oln').value.trim();
   const ph=document.getElementById('oph').value.trim();
@@ -917,7 +917,7 @@ async function goPayment(){
 
 // ── Ödeme gönder ─────────────────────────────────────────────────────────────
 async function submitPayment(){
-  // Demo kart bilgilerini kontrol eder ve siparisi backend'e kaydeder.
+  // Demo kart bilgilerini kontrol eder ve siparişi backend'e kaydeder.
   if(!PENDING_ORDER){showMsg('paymentOk','paymentErr','err','Teslimat bilgileri eksik.');go('order');return;}
   const cardName=document.getElementById('cardName').value.trim();
   const cardNumber=document.getElementById('cardNumber').value.replace(/\D/g,'');
@@ -994,7 +994,7 @@ async function submitContact(){
 
 // ── Üye kayıt gönder ─────────────────────────────────────────────────────────
 async function submitLogin(){
-  // Normal uye girisi yapar, token'i localStorage'a kaydeder.
+  // Normal üye girişi yapar, token'ı localStorage'a kaydeder.
   const email=document.getElementById('lemail').value.trim();
   const password=document.getElementById('lpass').value;
   const remember=document.getElementById('rememberMe')?.checked || false;
@@ -1024,7 +1024,7 @@ async function submitLogin(){
 }
 
 async function submitRegister(){
-  // Yeni uye kaydi olusturur. Telefon zorunludur.
+  // Yeni üye kaydı oluşturur. Telefon zorunludur.
   const fullName=document.getElementById('rname').value.trim();
   const email=document.getElementById('remail').value.trim();
   const phone=document.getElementById('rphone').value.trim();
@@ -1068,8 +1068,8 @@ async function submitRegister(){
 const pageMap={home:'page-home',about:'page-about',services:'page-services',shop:'page-shop',appt:'page-appt',blog:'page-blog',contact:'page-contact',auth:'page-auth',profile:'page-profile',reviews:'page-reviews',forbidden:'page-403',order:'page-order',payment:'page-payment'};
 const navMap={home:'nb-home',about:'nb-about',services:'nb-services',shop:'nb-shop',blog:'nb-blog',contact:'nb-contact',auth:'nb-auth'};
 function go(id){
-  // Tek sayfa uygulamada sayfalar arasi gecisleri yoneten ana fonksiyon.
-  // Yeni bir sayfa bolumu eklersen once pageMap'e, sonra HTML'de ilgili id'ye bak.
+  // Tek sayfa uygulamada sayfalar arası geçişleri yöneten ana fonksiyon.
+  // Yeni bir sayfa bölümü eklersen önce pageMap'e, sonra HTML'de ilgili id'ye bak.
   if(id==='admin' || id==='adminLogin'){id='home';}
   if(id==='profile' && !userToken && !adminToken){id='auth';}
   if(id==='payment' && !PENDING_ORDER){id='order';}

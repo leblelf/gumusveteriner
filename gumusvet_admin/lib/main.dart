@@ -6,16 +6,16 @@ import 'core/constants/app_constants.dart';
 import 'core/network/api_service.dart';
 
 // -----------------------------------------------------------------------------
-// Gumus Vet Admin
+// Gümüş Vet Admin
 // -----------------------------------------------------------------------------
-// Bu dosya Flutter admin uygulamasinin ana dosyasidir.
+// Bu dosya Flutter admin uygulamasının ana dosyasıdır.
 //
-// Okuma sirasi:
-// 1. Tema ve uygulama girisi
-// 2. Login ekrani
-// 3. AdminShell: ust bar, sol menu ve sayfa gecisleri
-// 4. Yonetim sayfalari: Dashboard, Randevular, Petler, Yatan Hastalar...
-// 5. Veri modelleri ve ornek kayitlar
+// Okuma sırası:
+// 1. Tema ve uygulama girişi
+// 2. Login ekranı
+// 3. AdminShell: üst bar, sol menü ve sayfa geçişleri
+// 4. Yönetim sayfaları: Dashboard, Randevular, Petler, Yatan Hastalar...
+// 5. Veri modelleri ve örnek kayıtlar
 // -----------------------------------------------------------------------------
 
 void main() {
@@ -53,7 +53,7 @@ class _GumusVetAdminAppState extends State<GumusVetAdminApp> {
 }
 
 ThemeData buildAdminTheme(Brightness brightness) {
-  // Web sitesindeki yesil/temiz klinik hissini admin uygulamasina tasir.
+  // Web sitesindeki yeşil/temiz klinik hissini admin uygulamasına taşır.
   final dark = brightness == Brightness.dark;
   final background = dark ? const Color(0xFF07110F) : const Color(0xFFF4F8F6);
   final surface = dark ? const Color(0xFF101C19) : Colors.white;
@@ -113,8 +113,8 @@ Color appOrange(BuildContext context) => Theme.of(context).colorScheme.primary;
 final ValueNotifier<int> adminProfileVersion = ValueNotifier<int>(0);
 
 class ApiClient {
-  // Backend API ile konusmak icin kucuk bir yardimci sinif.
-  // Token saklama isi login sonrasinda FlutterSecureStorage ile yapilir.
+  // Backend API ile konuşmak için küçük bir yardımcı sınıf.
+  // Token saklama işi login sonrasında FlutterSecureStorage ile yapılır.
   ApiClient(this.storage);
 
   final FlutterSecureStorage storage;
@@ -158,10 +158,10 @@ class _AuthGateState extends State<AuthGate> {
     }
     final value = await storage.read(key: AppConstants.tokenKey);
     if (!mounted) return;
-      setState(() {
-        token = value;
-        loading = false;
-      });
+    setState(() {
+      token = value;
+      loading = false;
+    });
   }
 
   @override
@@ -197,7 +197,8 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final username = TextEditingController(text: 'gumusveterinermuayenehanesi@gmail.com');
+  final username =
+      TextEditingController(text: 'gumusveterinermuayenehanesi@gmail.com');
   final password = TextEditingController();
   bool loading = false;
   bool rememberMe = true;
@@ -236,7 +237,8 @@ class _LoginPageState extends State<LoginPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(AppConstants.rememberMeKey, rememberMe);
       if (rememberMe) {
-        await prefs.setString(AppConstants.savedUsernameKey, username.text.trim());
+        await prefs.setString(
+            AppConstants.savedUsernameKey, username.text.trim());
       } else {
         await prefs.remove(AppConstants.savedUsernameKey);
       }
@@ -272,7 +274,8 @@ class _LoginPageState extends State<LoginPage> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Şifre sıfırlama bağlantısı e-posta adresine gönderildi.')));
+          content:
+              Text('Şifre sıfırlama bağlantısı e-posta adresine gönderildi.')));
     } catch (e) {
       setState(() => error = e.toString().replaceFirst('Exception: ', ''));
     }
@@ -365,8 +368,8 @@ class AdminShell extends StatefulWidget {
 }
 
 class _AdminShellState extends State<AdminShell> {
-  // Admin girisinden sonra gorunen ana iskelet.
-  // selected sol menude hangi sayfanin acik oldugunu tutar.
+  // Admin girişinden sonra görünen ana iskelet.
+  // selected sol menüde hangi sayfanın açık oldugünu tutar.
   int selected = 2;
   String query = '';
 
@@ -398,7 +401,29 @@ class _AdminShellState extends State<AdminShell> {
           isDark: widget.themeMode == ThemeMode.dark,
           onToggleTheme: widget.onToggleTheme,
         ),
-        Expanded(child: pages[selected]),
+        Expanded(
+          child: PageBackdrop(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                final slide = Tween<Offset>(
+                  begin: const Offset(.035, 0),
+                  end: Offset.zero,
+                ).animate(animation);
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(position: slide, child: child),
+                );
+              },
+              child: KeyedSubtree(
+                key: ValueKey<int>(selected),
+                child: pages[selected],
+              ),
+            ),
+          ),
+        ),
       ],
     );
 
@@ -415,38 +440,33 @@ class _AdminShellState extends State<AdminShell> {
               ),
             )
           : null,
-      body: Stack(
+      body: Row(
         children: [
-          const Positioned.fill(child: AnimatedPawBackground()),
-          Row(
-            children: [
-              if (!mobile)
-                Sidebar(
-                  selected: selected,
-                  onSelected: (value) => setState(() => selected = value),
-                  onLogout: logout,
-                ),
-              Expanded(
-                child: mobile
-                    ? Builder(
-                        builder: (context) => Column(
-                          children: [
-                            Container(
-                              height: 54,
-                              color: appSurface(context),
-                              alignment: Alignment.centerLeft,
-                              child: IconButton(
-                                icon: const Icon(Icons.menu),
-                                onPressed: () => Scaffold.of(context).openDrawer(),
-                              ),
-                            ),
-                            Expanded(child: content),
-                          ],
+          if (!mobile)
+            Sidebar(
+              selected: selected,
+              onSelected: (value) => setState(() => selected = value),
+              onLogout: logout,
+            ),
+          Expanded(
+            child: mobile
+                ? Builder(
+                    builder: (context) => Column(
+                      children: [
+                        Container(
+                          height: 54,
+                          color: appSurface(context),
+                          alignment: Alignment.centerLeft,
+                          child: IconButton(
+                            icon: const Icon(Icons.menu),
+                            onPressed: () => Scaffold.of(context).openDrawer(),
+                          ),
                         ),
-                      )
-                    : content,
-              ),
-            ],
+                        Expanded(child: content),
+                      ],
+                    ),
+                  )
+                : content,
           ),
         ],
       ),
@@ -482,6 +502,8 @@ class Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final panelColor = dark ? const Color(0xFF0B1714) : const Color(0xFFF7FBF8);
     final items = [
       MenuItem(Icons.dashboard_outlined, 'Dashboard'),
       MenuItem(Icons.calendar_month_outlined, 'Randevular'),
@@ -498,7 +520,10 @@ class Sidebar extends StatelessWidget {
     ];
     return Container(
       width: 245,
-      color: appSurface(context),
+      decoration: BoxDecoration(
+        color: panelColor,
+        border: Border(right: BorderSide(color: appBorder(context))),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -554,6 +579,42 @@ class MenuItem {
   final String label;
 }
 
+class PageBackdrop extends StatelessWidget {
+  const PageBackdrop({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: dark
+              ? const [
+                  Color(0xFF07110F),
+                  Color(0xFF0D211D),
+                  Color(0xFF101C19),
+                ]
+              : const [
+                  Color(0xFFF4F8F6),
+                  Color(0xFFEAF7F2),
+                  Color(0xFFFFFCF7),
+                ],
+        ),
+      ),
+      child: Stack(
+        children: [
+          const Positioned.fill(child: AnimatedPawBackground()),
+          Positioned.fill(child: child),
+        ],
+      ),
+    );
+  }
+}
+
 class AnimatedPawBackground extends StatefulWidget {
   const AnimatedPawBackground({super.key});
 
@@ -583,18 +644,36 @@ class _AnimatedPawBackgroundState extends State<AnimatedPawBackground>
   Widget build(BuildContext context) {
     final color = appOrange(context);
     final items = [
-      _PatternItem(Icons.pets, .12, .14, 18, .10),
-      _PatternItem(Icons.cruelty_free_outlined, .34, .10, 16, .08),
-      _PatternItem(Icons.favorite_outline, .58, .16, 14, .09),
-      _PatternItem(Icons.medical_services_outlined, .82, .12, 18, .08),
-      _PatternItem(Icons.pets, .22, .38, 15, .09),
-      _PatternItem(Icons.vaccines_outlined, .46, .43, 18, .08),
-      _PatternItem(Icons.pets, .72, .36, 14, .10),
-      _PatternItem(Icons.cruelty_free_outlined, .92, .48, 18, .07),
-      _PatternItem(Icons.favorite_outline, .16, .70, 16, .08),
-      _PatternItem(Icons.pets, .42, .78, 20, .09),
-      _PatternItem(Icons.medical_services_outlined, .64, .68, 14, .08),
-      _PatternItem(Icons.pets, .88, .82, 16, .09),
+      _PatternItem(Icons.pets, .04, .05, 18, .13),
+      _PatternItem(Icons.cruelty_free_outlined, .15, .12, 16, .10),
+      _PatternItem(Icons.favorite_outline, .28, .06, 14, .11),
+      _PatternItem(Icons.medical_services_outlined, .42, .13, 18, .10),
+      _PatternItem(Icons.pets, .56, .04, 17, .12),
+      _PatternItem(Icons.vaccines_outlined, .70, .11, 15, .10),
+      _PatternItem(Icons.pets, .84, .06, 19, .12),
+      _PatternItem(Icons.cruelty_free_outlined, .95, .15, 17, .09),
+      _PatternItem(Icons.favorite_outline, .08, .26, 15, .11),
+      _PatternItem(Icons.pets, .22, .33, 20, .13),
+      _PatternItem(Icons.medical_services_outlined, .36, .25, 14, .10),
+      _PatternItem(Icons.pets, .50, .34, 16, .12),
+      _PatternItem(Icons.vaccines_outlined, .64, .27, 18, .10),
+      _PatternItem(Icons.favorite_outline, .78, .36, 15, .11),
+      _PatternItem(Icons.pets, .92, .30, 18, .12),
+      _PatternItem(Icons.cruelty_free_outlined, .03, .48, 16, .10),
+      _PatternItem(Icons.medical_services_outlined, .18, .56, 18, .09),
+      _PatternItem(Icons.pets, .31, .46, 15, .13),
+      _PatternItem(Icons.favorite_outline, .47, .55, 17, .10),
+      _PatternItem(Icons.pets, .60, .48, 20, .12),
+      _PatternItem(Icons.vaccines_outlined, .74, .58, 15, .10),
+      _PatternItem(Icons.cruelty_free_outlined, .89, .50, 18, .09),
+      _PatternItem(Icons.pets, .10, .78, 18, .12),
+      _PatternItem(Icons.favorite_outline, .25, .70, 14, .10),
+      _PatternItem(Icons.medical_services_outlined, .39, .82, 17, .09),
+      _PatternItem(Icons.pets, .53, .73, 19, .13),
+      _PatternItem(Icons.cruelty_free_outlined, .68, .84, 16, .10),
+      _PatternItem(Icons.vaccines_outlined, .81, .75, 18, .09),
+      _PatternItem(Icons.pets, .95, .88, 17, .12),
+      _PatternItem(Icons.favorite_outline, .06, .93, 15, .10),
     ];
     return IgnorePointer(
       child: AnimatedBuilder(
@@ -638,7 +717,9 @@ class _PatternItem {
 extension _SoftWave on double {
   double sinLike() {
     final t = this % 6.28318;
-    return t < 3.14159 ? (t / 3.14159) * 2 - 1 : 1 - ((t - 3.14159) / 3.14159) * 2;
+    return t < 3.14159
+        ? (t / 3.14159) * 2 - 1
+        : 1 - ((t - 3.14159) / 3.14159) * 2;
   }
 }
 
@@ -658,14 +739,13 @@ class SidebarTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activeBg = Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF32261C)
-        : const Color(0xFFFFF3E8);
-    final activeBorder = Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF5A3B22)
-        : const Color(0xFFFFD9B7);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final activeBg = dark ? const Color(0xFF12342D) : const Color(0xFFE6F7F1);
+    final activeBorder =
+        dark ? const Color(0xFF2B725F) : const Color(0xFFBCE7D8);
     final inactiveColor = appMuted(context);
-    final activeColor = appOrange(context);
+    final activeColor =
+        dark ? const Color(0xFF75E0BE) : const Color(0xFF0F6E56);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       child: InkWell(
@@ -681,6 +761,16 @@ class SidebarTile extends StatelessWidget {
           ),
           child: Row(
             children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 4,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: active ? activeColor : Colors.transparent,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(width: 10),
               Icon(icon, size: 20, color: active ? activeColor : inactiveColor),
               const SizedBox(width: 12),
               Text(
@@ -779,13 +869,17 @@ class TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final panelColor = dark ? const Color(0xFF0B1714) : const Color(0xFFF7FBF8);
     return Container(
       height: 70,
       padding: const EdgeInsets.symmetric(horizontal: 28),
-      color: appSurface(context),
+      decoration: BoxDecoration(
+        color: panelColor,
+        border: Border(bottom: BorderSide(color: appBorder(context))),
+      ),
       child: Row(
         children: [
-          Expanded(child: PawPatternStrip(color: appOrange(context))),
           const Spacer(),
           IconButton(
             onPressed: onToggleTheme,
@@ -816,9 +910,12 @@ class TopBar extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                        Text(name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w800)),
                         Text('Klinik yöneticisi',
-                            style: TextStyle(fontSize: 12, color: appMuted(context))),
+                            style: TextStyle(
+                                fontSize: 12, color: appMuted(context))),
                       ],
                     ),
                   ],
@@ -1167,7 +1264,8 @@ class QuickNotesCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             if (notes.isEmpty)
-              Text('Henüz not yok.', style: TextStyle(color: appMuted(context))),
+              Text('Henüz not yok.',
+                  style: TextStyle(color: appMuted(context))),
             for (var i = 0; i < notes.length; i++)
               ListTile(
                 dense: true,
@@ -1197,8 +1295,8 @@ class PetListPage extends StatefulWidget {
 }
 
 class _PetListPageState extends State<PetListPage> {
-  // Excel'den aktarilan petler burada listelenir. Arama, 12'li sayfalama ve
-  // detay ekrani tamamen bu state icinde yonetilir.
+  // Excel'den aktarılan petler burada listelenir. Arama, 12'li sayfalama ve
+  // detay ekranı tamamen bu state içinde yönetilir.
   static const int pageSize = 12;
   String localQuery = '';
   bool grid = false;
@@ -1215,12 +1313,14 @@ class _PetListPageState extends State<PetListPage> {
   Future<void> _loadViewMode() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    setState(() => grid = prefs.getString(AppConstants.petViewModeKey) == 'grid');
+    setState(
+        () => grid = prefs.getString(AppConstants.petViewModeKey) == 'grid');
   }
 
   Future<void> _setViewMode(bool useGrid) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(AppConstants.petViewModeKey, useGrid ? 'grid' : 'list');
+    await prefs.setString(
+        AppConstants.petViewModeKey, useGrid ? 'grid' : 'list');
     if (mounted) setState(() => grid = useGrid);
   }
 
@@ -1367,7 +1467,8 @@ class _PetListPageState extends State<PetListPage> {
     final name = TextEditingController();
     final owner = TextEditingController();
     final tag = TextEditingController(
-        text: 'AT${DateTime.now().millisecondsSinceEpoch.toString().substring(5, 13)}');
+        text:
+            'AT${DateTime.now().millisecondsSinceEpoch.toString().substring(5, 13)}');
     final type = TextEditingController(text: 'Kedi');
     final breed = TextEditingController();
     final phone = TextEditingController();
@@ -1381,17 +1482,30 @@ class _PetListPageState extends State<PetListPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(controller: name, decoration: const InputDecoration(labelText: 'Pet adı')),
+                TextField(
+                    controller: name,
+                    decoration: const InputDecoration(labelText: 'Pet adı')),
                 const SizedBox(height: 10),
-                TextField(controller: tag, decoration: const InputDecoration(labelText: 'Mikroçip / Künye No')),
+                TextField(
+                    controller: tag,
+                    decoration: const InputDecoration(
+                        labelText: 'Mikroçip / Künye No')),
                 const SizedBox(height: 10),
-                TextField(controller: type, decoration: const InputDecoration(labelText: 'Tür')),
+                TextField(
+                    controller: type,
+                    decoration: const InputDecoration(labelText: 'Tür')),
                 const SizedBox(height: 10),
-                TextField(controller: breed, decoration: const InputDecoration(labelText: 'Irk')),
+                TextField(
+                    controller: breed,
+                    decoration: const InputDecoration(labelText: 'Irk')),
                 const SizedBox(height: 10),
-                TextField(controller: owner, decoration: const InputDecoration(labelText: 'Sahip adı')),
+                TextField(
+                    controller: owner,
+                    decoration: const InputDecoration(labelText: 'Sahip adı')),
                 const SizedBox(height: 10),
-                TextField(controller: phone, decoration: const InputDecoration(labelText: 'Telefon')),
+                TextField(
+                    controller: phone,
+                    decoration: const InputDecoration(labelText: 'Telefon')),
               ],
             ),
           ),
@@ -1409,8 +1523,12 @@ class _PetListPageState extends State<PetListPage> {
                   PetRecord(
                       name.text.trim(),
                       tag.text.trim().isEmpty ? 'Künye yok' : tag.text.trim(),
-                      type.text.trim().isEmpty ? 'Belirtilmedi' : type.text.trim(),
-                      breed.text.trim().isEmpty ? 'Belirtilmedi' : breed.text.trim(),
+                      type.text.trim().isEmpty
+                          ? 'Belirtilmedi'
+                          : type.text.trim(),
+                      breed.text.trim().isEmpty
+                          ? 'Belirtilmedi'
+                          : breed.text.trim(),
                       owner.text.trim(),
                       phone.text.trim().isEmpty ? '-' : phone.text.trim()),
                 );
@@ -1467,17 +1585,30 @@ class _PetListPageState extends State<PetListPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(controller: name, decoration: const InputDecoration(labelText: 'Pet adı')),
+                TextField(
+                    controller: name,
+                    decoration: const InputDecoration(labelText: 'Pet adı')),
                 const SizedBox(height: 10),
-                TextField(controller: tag, decoration: const InputDecoration(labelText: 'Mikroçip / Künye No')),
+                TextField(
+                    controller: tag,
+                    decoration: const InputDecoration(
+                        labelText: 'Mikroçip / Künye No')),
                 const SizedBox(height: 10),
-                TextField(controller: type, decoration: const InputDecoration(labelText: 'Tür')),
+                TextField(
+                    controller: type,
+                    decoration: const InputDecoration(labelText: 'Tür')),
                 const SizedBox(height: 10),
-                TextField(controller: breed, decoration: const InputDecoration(labelText: 'Irk')),
+                TextField(
+                    controller: breed,
+                    decoration: const InputDecoration(labelText: 'Irk')),
                 const SizedBox(height: 10),
-                TextField(controller: owner, decoration: const InputDecoration(labelText: 'Sahip adı')),
+                TextField(
+                    controller: owner,
+                    decoration: const InputDecoration(labelText: 'Sahip adı')),
                 const SizedBox(height: 10),
-                TextField(controller: phone, decoration: const InputDecoration(labelText: 'Telefon')),
+                TextField(
+                    controller: phone,
+                    decoration: const InputDecoration(labelText: 'Telefon')),
               ],
             ),
           ),
@@ -1981,11 +2112,13 @@ class _AppointmentPageState extends State<AppointmentPage> {
           children: [
             Text('Tarih/Saat: ${item['appt_date']} ${item['appt_time']}'),
             const SizedBox(height: 8),
-            Text('Pet: ${item['pet_name'] ?? '-'} (${item['pet_type'] ?? '-'})'),
+            Text(
+                'Pet: ${item['pet_name'] ?? '-'} (${item['pet_type'] ?? '-'})'),
             const SizedBox(height: 8),
             Text('Talep edilen hizmet: ${item['service'] ?? 'Belirtilmedi'}'),
             const SizedBox(height: 8),
-            Text('Not: ${item['notes']?.toString().trim().isEmpty == false ? item['notes'] : 'Not yok'}'),
+            Text(
+                'Not: ${item['notes']?.toString().trim().isEmpty == false ? item['notes'] : 'Not yok'}'),
             const SizedBox(height: 8),
             Text('Telefon: ${item['phone'] ?? '-'}'),
           ],
@@ -2010,8 +2143,8 @@ class HospitalizedPage extends StatefulWidget {
 }
 
 class _HospitalizedPageState extends State<HospitalizedPage> {
-  // Yatan hasta kayitlari uygulama icinde tutulur. Hasta yatisi formu yeni
-  // kayit ekler; kayda tiklaninca tedavi plani dahil tum detaylar acilir.
+  // Yatan hasta kayıtları uygulama içinde tutulur. Hasta yatışı formu yeni
+  // kayıt ekler; kayda tıklanınca tedavi planı dahil tüm detaylar açılır.
   final List<HospitalRecord> records = List.of(sampleHospitalized);
   HospitalRecord? selected;
 
@@ -2107,7 +2240,8 @@ class _HospitalizedPageState extends State<HospitalizedPage> {
                   if (useRegisteredPet) ...[
                     DropdownButtonFormField<PetRecord>(
                       value: selectedRegisteredPet,
-                      decoration: const InputDecoration(labelText: 'Kayıtlı pet'),
+                      decoration:
+                          const InputDecoration(labelText: 'Kayıtlı pet'),
                       items: appPets
                           .map((item) => DropdownMenuItem(
                               value: item,
@@ -2117,39 +2251,76 @@ class _HospitalizedPageState extends State<HospitalizedPage> {
                           setDialogState(() => selectedRegisteredPet = value),
                     ),
                   ] else ...[
-                    TextField(controller: pet, decoration: const InputDecoration(labelText: 'Hasta / pet adı')),
+                    TextField(
+                        controller: pet,
+                        decoration: const InputDecoration(
+                            labelText: 'Hasta / pet adı')),
                     const SizedBox(height: 10),
-                    TextField(controller: tag, decoration: const InputDecoration(labelText: 'Mikroçip / Künye No')),
+                    TextField(
+                        controller: tag,
+                        decoration: const InputDecoration(
+                            labelText: 'Mikroçip / Künye No')),
                     const SizedBox(height: 10),
-                    TextField(controller: type, decoration: const InputDecoration(labelText: 'Tür')),
+                    TextField(
+                        controller: type,
+                        decoration: const InputDecoration(labelText: 'Tür')),
                     const SizedBox(height: 10),
-                    TextField(controller: breed, decoration: const InputDecoration(labelText: 'Irk')),
+                    TextField(
+                        controller: breed,
+                        decoration: const InputDecoration(labelText: 'Irk')),
                     const SizedBox(height: 10),
-                    TextField(controller: owner, decoration: const InputDecoration(labelText: 'Sahip adı')),
+                    TextField(
+                        controller: owner,
+                        decoration:
+                            const InputDecoration(labelText: 'Sahip adı')),
                     const SizedBox(height: 10),
-                    TextField(controller: phone, decoration: const InputDecoration(labelText: 'Telefon')),
+                    TextField(
+                        controller: phone,
+                        decoration:
+                            const InputDecoration(labelText: 'Telefon')),
                   ],
                   const SizedBox(height: 10),
-                  TextField(controller: room, decoration: const InputDecoration(labelText: 'Oda / kafes')),
+                  TextField(
+                      controller: room,
+                      decoration:
+                          const InputDecoration(labelText: 'Oda / kafes')),
                   const SizedBox(height: 10),
-                  TextField(controller: reason, decoration: const InputDecoration(labelText: 'Yatış nedeni')),
+                  TextField(
+                      controller: reason,
+                      decoration:
+                          const InputDecoration(labelText: 'Yatış nedeni')),
                   const SizedBox(height: 10),
-                  TextField(controller: treatment, minLines: 2, maxLines: 4, decoration: const InputDecoration(labelText: 'Uygulanacak tedavi')),
+                  TextField(
+                      controller: treatment,
+                      minLines: 2,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                          labelText: 'Uygulanacak tedavi')),
                   const SizedBox(height: 10),
-                  TextField(controller: notes, minLines: 2, maxLines: 4, decoration: const InputDecoration(labelText: 'Veteriner notu')),
+                  TextField(
+                      controller: notes,
+                      minLines: 2,
+                      maxLines: 4,
+                      decoration:
+                          const InputDecoration(labelText: 'Veteriner notu')),
                 ],
               ),
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Vazgeç')),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Vazgeç')),
             FilledButton(
               onPressed: () {
-                final selectedPet = useRegisteredPet ? selectedRegisteredPet : null;
+                final selectedPet =
+                    useRegisteredPet ? selectedRegisteredPet : null;
                 if ((selectedPet == null && pet.text.trim().isEmpty) ||
                     treatment.text.trim().isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Pet adı ve uygulanacak tedavi zorunlu.')),
+                    const SnackBar(
+                        content:
+                            Text('Pet adı ve uygulanacak tedavi zorunlu.')),
                   );
                   return;
                 }
@@ -2157,12 +2328,19 @@ class _HospitalizedPageState extends State<HospitalizedPage> {
                     PetRecord(
                       pet.text.trim(),
                       tag.text.trim().isEmpty ? 'Künye yok' : tag.text.trim(),
-                      type.text.trim().isEmpty ? 'Belirtilmedi' : type.text.trim(),
-                      breed.text.trim().isEmpty ? 'Belirtilmedi' : breed.text.trim(),
+                      type.text.trim().isEmpty
+                          ? 'Belirtilmedi'
+                          : type.text.trim(),
+                      breed.text.trim().isEmpty
+                          ? 'Belirtilmedi'
+                          : breed.text.trim(),
                       owner.text.trim(),
                       phone.text.trim().isEmpty ? '-' : phone.text.trim(),
                     );
-                if (selectedPet == null && !appPets.any((item) => item.name == newPet.name && item.owner == newPet.owner)) {
+                if (selectedPet == null &&
+                    !appPets.any((item) =>
+                        item.name == newPet.name &&
+                        item.owner == newPet.owner)) {
                   appPets.insert(0, newPet);
                 }
                 setState(() {
@@ -2172,7 +2350,9 @@ class _HospitalizedPageState extends State<HospitalizedPage> {
                       newPet.name,
                       newPet.owner,
                       reason.text.trim(),
-                      room.text.trim().isEmpty ? 'Oda belirtilmedi' : room.text.trim(),
+                      room.text.trim().isEmpty
+                          ? 'Oda belirtilmedi'
+                          : room.text.trim(),
                       treatment.text.trim(),
                       newPet.phone,
                       notes.text.trim(),
@@ -2464,7 +2644,8 @@ class _CrudListPageState extends State<CrudListPage> {
                   final item = rows[index] as Map<String, dynamic>;
                   return Card(
                     child: ListTile(
-                      leading: ProductThumb(url: item['image_url']?.toString() ?? ''),
+                      leading: ProductThumb(
+                          url: item['image_url']?.toString() ?? ''),
                       title: Text(item['name']?.toString() ?? '-',
                           style: const TextStyle(fontWeight: FontWeight.w800)),
                       subtitle: Text(
@@ -3458,7 +3639,7 @@ class _AppointmentSlotsPageState extends State<AppointmentSlotsPage> {
                                 Text(
                                   taken
                                       ? 'Dolu'
-                                      : (blocked ? 'Kapalı' : 'Uygun'),
+                                      : (blocked ? 'Kapalı' : 'Uygün'),
                                   style: TextStyle(
                                       color: color,
                                       fontWeight: FontWeight.w700),
@@ -3681,7 +3862,8 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
         prefs.getString(AppConstants.adminProfileNameKey) ?? 'Dr. Gümüş';
     photoUrl.text = prefs.getString(AppConstants.adminProfilePhotoKey) ?? '';
     try {
-      final response = await widget.api.request(AppConstants.adminProfileEndpoint);
+      final response =
+          await widget.api.request(AppConstants.adminProfileEndpoint);
       email.text = response['data']?['email']?.toString() ?? '';
     } catch (_) {
       email.text = 'gumusveterinermuayenehanesi@gmail.com';
@@ -3784,7 +3966,8 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
                         ),
                         if (message != null) ...[
                           const SizedBox(height: 12),
-                          Text(message!, style: TextStyle(color: appOrange(context))),
+                          Text(message!,
+                              style: TextStyle(color: appOrange(context))),
                         ],
                         const SizedBox(height: 18),
                         FilledButton.icon(

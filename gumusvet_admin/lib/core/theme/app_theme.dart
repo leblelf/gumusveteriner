@@ -33,7 +33,8 @@ class AppTheme {
   AppTheme._();
 
   static ThemeData get darkTheme {
-    final baseTextTheme = GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
+    final baseTextTheme =
+        GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
@@ -74,7 +75,8 @@ class AppTheme {
           backgroundColor: AppColors.teal,
           foregroundColor: AppColors.background,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
@@ -98,11 +100,13 @@ class AppTheme {
       navigationRailTheme: const NavigationRailThemeData(
         backgroundColor: AppColors.surface,
         selectedIconTheme: IconThemeData(color: AppColors.teal),
-        selectedLabelTextStyle: TextStyle(color: AppColors.teal, fontWeight: FontWeight.w700),
+        selectedLabelTextStyle:
+            TextStyle(color: AppColors.teal, fontWeight: FontWeight.w700),
         unselectedIconTheme: IconThemeData(color: AppColors.textSecondary),
         unselectedLabelTextStyle: TextStyle(color: AppColors.textSecondary),
       ),
-      dividerTheme: const DividerThemeData(color: AppColors.border, thickness: 0.5),
+      dividerTheme:
+          const DividerThemeData(color: AppColors.border, thickness: 0.5),
     );
   }
 }
