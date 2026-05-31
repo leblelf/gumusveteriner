@@ -51,6 +51,7 @@
   <button class="nb" id="nb-contact"  onclick="go('contact')">İletişim</button>
   <button class="nb" id="nb-auth" onclick="go('auth')">Giriş Yap</button>
   <button class="nb cta" onclick="go('appt')">📅 Randevu Al</button>
+  <button class="nb" id="reviewBtn" style="display:none" onclick="go('review')">Yorum Yap</button>
   <!-- Kullanici giris yapinca ayri profil butonu yerine isim butonu profile gider. -->
   <button class="nav-user" id="nav-user" type="button" onclick="go('profile')"></button>
   <button class="nb" id="logoutBtn" style="display:none" onclick="logout()">Çıkış</button>
@@ -125,9 +126,39 @@
 </div>
 
 <div class="page" id="page-reviews">
-  <div class="page-top"><h2>Tüm Müşteri Yorumları</h2><p>Satın alma yapan üyelerimizin ürün ve klinik deneyimleri</p></div>
+  <div class="page-top"><h2>Tüm Müşteri Yorumları</h2><p>Klinik deneyimleri ve satın alınan ürünler için yapılan yorumlar</p></div>
   <div class="sec">
+    <div style="text-align:center;margin-bottom:1.5rem">
+      <button class="btn-submit" style="max-width:220px;border-radius:24px" onclick="go('review')">Yorum Yap</button>
+    </div>
     <div class="g3" id="all-site-reviews"></div>
+  </div>
+</div>
+
+<div class="page" id="page-review">
+  <div class="page-top"><h2>Yorum Yap</h2><p>Klinik deneyiminizi paylaşın veya satın aldığınız ürünü değerlendirin</p></div>
+  <div class="sec">
+    <div class="profile-card" style="max-width:640px;margin:0 auto">
+      <div class="sec-title" style="font-size:1.35rem">Deneyiminizi Paylaşın</div>
+      <div class="info-box">Genel klinik yorumunu herkes yapabilir. Ürün yorumu için giriş yapmanız ve ürünü daha önce satın almış olmanız gerekir.</div>
+      <form id="reviewForm" onsubmit="return false">
+        <div id="reviewGuestNameBox">
+          <label>Adınız *</label>
+          <input type="text" id="reviewAuthor" maxlength="80" placeholder="Adınız Soyadınız">
+        </div>
+        <div class="frow">
+          <div><label>Puan</label><select id="reviewRating"><option value="5">5 yıldız</option><option value="4">4 yıldız</option><option value="3">3 yıldız</option><option value="2">2 yıldız</option><option value="1">1 yıldız</option></select></div>
+          <div><label>Hayvan Türü</label><input type="text" id="reviewPetType" placeholder="Kedi, Köpek..."></div>
+        </div>
+        <label>Yorum Türü</label>
+        <select id="reviewProduct"><option value="Genel">Genel klinik yorumu</option></select>
+        <label>Yorumunuz *</label>
+        <textarea id="reviewMessage" maxlength="500" placeholder="Deneyiminizi kısaca yazın..."></textarea>
+        <button class="btn-submit" type="button" onclick="submitReview()">Yorumu Yayınla</button>
+        <div class="msg-ok" id="reviewOk"></div>
+        <div class="msg-err" id="reviewErr"></div>
+      </form>
+    </div>
   </div>
 </div>
 
@@ -365,6 +396,17 @@
         <div class="info-box" style="margin-bottom:0">Giriş yaptığınızda sipariş ekranında ad, telefon ve e-posta tekrar istenmez. Kayıtlı adresiniz varsa direkt seçebilirsiniz.</div>
       </div>
       <div class="profile-card">
+        <div class="sec-title" style="font-size:1.35rem">Profil Bilgilerimi Düzenle</div>
+        <form id="profileEditForm" onsubmit="return false">
+          <label>Ad Soyad *</label><input type="text" id="profileEditName" placeholder="Adınız Soyadınız">
+          <label>Telefon *</label><input type="tel" id="profileEditPhone" placeholder="05XX XXX XX XX">
+          <label>Profil Fotoğrafı URL</label><input type="url" id="profileEditPicture" placeholder="https://...">
+          <button class="btn-submit" type="button" onclick="updateProfile()">Bilgilerimi Güncelle</button>
+          <div class="msg-ok" id="profileEditOk"></div>
+          <div class="msg-err" id="profileEditErr"></div>
+        </form>
+      </div>
+      <div class="profile-card">
         <div class="sec-title" style="font-size:1.35rem">Adres Ekle</div>
         <form id="addressForm" onsubmit="return false">
           <div class="frow">
@@ -399,23 +441,6 @@
       <div class="profile-card">
         <div class="sec-title" style="font-size:1.35rem">Kayıtlı Hayvanlar</div>
         <div class="profile-list" id="petList"><div class="skeleton"></div></div>
-      </div>
-      <div class="profile-card">
-        <div class="sec-title" style="font-size:1.35rem">Satın Alma Yorumu</div>
-        <div class="info-box">Yorum ekleme alanı yalnızca site üzerinden satın alma yapan üyeler içindir. Yorumunuz ana sayfadaki müşteri yorumlarında görünür.</div>
-        <form id="reviewForm" onsubmit="return false">
-          <div class="frow">
-            <div><label>Puan</label><select id="reviewRating"><option value="5">5 yıldız</option><option value="4">4 yıldız</option><option value="3">3 yıldız</option><option value="2">2 yıldız</option><option value="1">1 yıldız</option></select></div>
-            <div><label>Hayvan Türü</label><input type="text" id="reviewPetType" placeholder="Kedi, Köpek..."></div>
-          </div>
-          <label>Hangi ürün için?</label>
-          <select id="reviewProduct"><option value="Genel">Genel klinik yorumu</option></select>
-          <label>Yorumunuz</label>
-          <textarea id="reviewMessage" maxlength="500" placeholder="Deneyiminizi kısaca yazın..."></textarea>
-          <button class="btn-submit" type="button" onclick="submitPurchaseReview()">Yorumu Yayınla</button>
-          <div class="msg-ok" id="reviewOk"></div>
-          <div class="msg-err" id="reviewErr"></div>
-        </form>
       </div>
     </div>
   </div>

@@ -2143,12 +2143,13 @@ def api_appointment_slots():
 @app.route("/api/reviews", methods=["POST"])
 def api_purchase_review():
     user = get_request_session_user()
-    if not user or user["is_banned"]:
-        return api_response(False, "Üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    if user and user["is_banned"]:
+        return api_response(False, "Hesabınız pasif durumda", None, HTTPStatus.UNAUTHORIZED)
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
     pet_type = (data.get("pet_type") or "Hasta Sahibi").strip()
     product_name = (data.get("product_name") or "Genel").strip()
+    author = (user["full_name"] if user else data.get("author") or "").strip()
     try:
         rating = int(data.get("rating") or 5)
     except (TypeError, ValueError):
@@ -2159,20 +2160,67 @@ def api_purchase_review():
         return api_response(False, "Yorum en az 8 karakter olmalı", None, HTTPStatus.BAD_REQUEST)
     if len(message) > 500:
         return api_response(False, "Yorum en fazla 500 karakter olabilir", None, HTTPStatus.BAD_REQUEST)
+    if len(author) < 2:
+        return api_response(False, "Yorum için adınızı yazın", None, HTTPStatus.BAD_REQUEST)
     with connect() as db:
-        purchased = db.execute("SELECT COUNT(*) FROM orders WHERE user_id = ?", (user["id"],)).fetchone()[0]
-        if purchased < 1:
-            return api_response(False, "Yorum yapabilmek için önce satın alma yapmış olmalısınız.", None, HTTPStatus.FORBIDDEN)
+        if product_name != "Genel":
+            if not user:
+                return api_response(False, "Ürün yorumu için üye girişi yapmalısınız.", None, HTTPStatus.UNAUTHORIZED)
+            purchased = db.execute(
+                """
+                SELECT COUNT(*)
+                FROM orders
+                JOIN order_items ON order_items.order_id = orders.id
+                JOIN products ON products.id = order_items.product_id
+                WHERE orders.user_id = ? AND products.name = ?
+                """,
+                (user["id"], product_name),
+            ).fetchone()[0]
+            if purchased < 1:
+                return api_response(False, "Yalnızca satın aldığınız ürünlere yorum yapabilirsiniz.", None, HTTPStatus.FORBIDDEN)
         cursor = db.execute(
             """
             INSERT INTO site_reviews (author, pet_type, product_name, rating, message, reply, active, created_at)
             VALUES (?, ?, ?, ?, ?, '', 1, ?)
             """,
-            (user["full_name"], pet_type, product_name, rating, message, datetime.now().isoformat(timespec="seconds")),
+            (author, pet_type, product_name, rating, message, datetime.now().isoformat(timespec="seconds")),
         )
         db.commit()
         row = db.execute("SELECT * FROM site_reviews WHERE id = ?", (cursor.lastrowid,)).fetchone()
     return api_response(True, "Yorumunuz yayınlandı", row_to_dict(row), HTTPStatus.CREATED)
+
+
+@app.route("/api/profile", methods=["PATCH", "PUT"])
+def api_profile_update():
+    """Üyenin temel profil bilgilerini güvenli şekilde günceller."""
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    data = request.get_json(silent=True) or {}
+    full_name = (data.get("full_name") or "").strip()
+    profile_picture = (data.get("profile_picture") or "").strip()
+    try:
+        phone = validate_phone(data.get("phone", ""))
+    except ValueError as exc:
+        return api_response(False, str(exc), None, HTTPStatus.BAD_REQUEST)
+    if len(full_name) < 3:
+        return api_response(False, "Ad soyad en az 3 karakter olmalı", None, HTTPStatus.BAD_REQUEST)
+    if profile_picture and not re.fullmatch(r"https?://[^\s]{1,500}", profile_picture):
+        return api_response(False, "Profil fotoğrafı için geçerli bir URL girin", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        db.execute(
+            "UPDATE users SET full_name = ?, name = ?, phone = ?, profile_picture = ? WHERE id = ?",
+            (full_name, full_name, phone, profile_picture, user["id"]),
+        )
+        db.commit()
+        updated = db.execute(
+            """
+            SELECT id, google_id, full_name, name, email, phone, profile_picture, role, created_at, is_banned
+            FROM users WHERE id = ?
+            """,
+            (user["id"],),
+        ).fetchone()
+    return api_response(True, "Profil bilgileriniz güncellendi", row_to_dict(updated))
 
 
 @app.route("/api/profile/purchased-products", methods=["GET"])

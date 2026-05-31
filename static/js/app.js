@@ -398,6 +398,9 @@ function renderProfile(){
   const avatar=document.getElementById('profileAvatar');
   const saved=currentUser?.avatar || user.profile_picture || currentUser?.profile_picture || localStorage.getItem(`gvAvatar:${user.email}`) || '';
   avatar.innerHTML=saved ? `<img src="${saved}" alt="Profil fotoğrafı">` : (user.full_name || 'GV').split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase();
+  document.getElementById('profileEditName').value=user.full_name || '';
+  document.getElementById('profileEditPhone').value=user.phone || '';
+  document.getElementById('profileEditPicture').value=user.profile_picture || '';
   const addressList=document.getElementById('addressList');
   addressList.innerHTML=PROFILE.addresses.length ? PROFILE.addresses.map(a=>`
     <div class="profile-item">
@@ -430,12 +433,38 @@ async function loadProfile(){
 }
 async function loadPurchasedProducts(){
   const select=document.getElementById('reviewProduct');
-  if(!select || !userToken)return;
+  const guestNameBox=document.getElementById('reviewGuestNameBox');
+  if(guestNameBox)guestNameBox.style.display=userToken ? 'none' : 'block';
+  if(!select)return;
+  select.innerHTML='<option value="Genel">Genel klinik yorumu</option>';
+  if(!userToken)return;
   const res=await fetch('/api/profile/purchased-products',{headers:authHeaders()});
   const payload=await res.json();
   if(!res.ok || payload.success===false)return;
   const products=payload.data || [];
   select.innerHTML='<option value="Genel">Genel klinik yorumu</option>'+products.map(p=>`<option value="${escAttr(p.name)}">${p.name}</option>`).join('');
+}
+async function updateProfile(){
+  if(!userToken){go('auth');return;}
+  const payload={
+    full_name:document.getElementById('profileEditName').value.trim(),
+    phone:document.getElementById('profileEditPhone').value.trim(),
+    profile_picture:document.getElementById('profileEditPicture').value.trim()
+  };
+  if(payload.full_name.length<3){showMsg('profileEditOk','profileEditErr','err','Ad soyad en az 3 karakter olmalı.');return;}
+  if(!validPhone(payload.phone)){showMsg('profileEditOk','profileEditErr','err','Geçerli telefon: 05XX XXX XX XX');return;}
+  try{
+    const res=await fetch('/api/profile',{method:'PATCH',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(!res.ok || data.success===false)throw new Error(data.message || data.error || 'Profil güncellenemedi.');
+    currentUser={...currentUser,...data.data};
+    PROFILE.user=data.data;
+    const storage=localStorage.getItem('gvUserToken') ? localStorage : sessionStorage;
+    storage.setItem('gvUser',JSON.stringify(currentUser));
+    updateAuthUI();
+    renderProfile();
+    showMsg('profileEditOk','profileEditErr','ok','✅ Profil bilgileriniz güncellendi.');
+  }catch(e){showMsg('profileEditOk','profileEditErr','err',e.message || 'Profil güncellenemedi.');}
 }
 async function submitAddress(){
   if(!userToken && !adminToken){go('auth');return;}
@@ -544,15 +573,19 @@ function updateAuthUI(){
   document.body.classList.toggle('user-session', !!userToken);
   const label=document.getElementById('nav-user');
   const logoutBtn=document.getElementById('logoutBtn');
+  const reviewBtn=document.getElementById('reviewBtn');
   if(adminToken){
     if(label)label.textContent='Admin';
     if(logoutBtn)logoutBtn.style.display='inline-flex';
+    if(reviewBtn)reviewBtn.style.display='none';
   }else if(currentUser){
     if(label)label.textContent=currentUser.full_name || currentUser.name || currentUser.email;
     if(logoutBtn)logoutBtn.style.display='inline-flex';
+    if(reviewBtn)reviewBtn.style.display='inline-flex';
   }else{
     if(label)label.textContent='';
     if(logoutBtn)logoutBtn.style.display='none';
+    if(reviewBtn)reviewBtn.style.display='none';
   }
 }
 
@@ -843,15 +876,16 @@ async function submitAppt(){
   }
 }
 
-async function submitPurchaseReview(){
-  // Satın alma yapan üyelerin ana sayfaya yorum bırakmasını sağlar.
-  if(!userToken){go('auth');return;}
+async function submitReview(){
+  // Genel klinik yorumu herkese açıktır; ürün yorumunu backend satın alma kaydıyla doğrular.
   const payload={
+    author:document.getElementById('reviewAuthor').value.trim(),
     rating:Number(document.getElementById('reviewRating').value || 5),
     pet_type:document.getElementById('reviewPetType').value.trim() || 'Hasta Sahibi',
     product_name:document.getElementById('reviewProduct').value || 'Genel',
     message:document.getElementById('reviewMessage').value.trim()
   };
+  if(!userToken && payload.author.length<2){showMsg('reviewOk','reviewErr','err','Yorum için adınızı yazın.');return;}
   if(payload.message.length<8){showMsg('reviewOk','reviewErr','err','Yorum en az 8 karakter olmalı.');return;}
   try{
     const res=await fetch('/api/reviews',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(payload)});
@@ -859,6 +893,7 @@ async function submitPurchaseReview(){
     if(!res.ok || data.success===false)throw new Error(data.message || data.error || 'Yorum kaydedilemedi.');
     showMsg('reviewOk','reviewErr','ok','✅ Yorumunuz yayınlandı.');
     document.getElementById('reviewForm').reset();
+    loadPurchasedProducts().catch(()=>{});
     await loadSiteContent();
   }catch(e){showMsg('reviewOk','reviewErr','err',e.message || 'Yorum kaydedilemedi.');}
 }
@@ -1065,7 +1100,7 @@ async function submitRegister(){
 }
 
 // -- Sayfa navigasyon ---------------------------------------------------------
-const pageMap={home:'page-home',about:'page-about',services:'page-services',shop:'page-shop',appt:'page-appt',blog:'page-blog',contact:'page-contact',auth:'page-auth',profile:'page-profile',reviews:'page-reviews',forbidden:'page-403',order:'page-order',payment:'page-payment'};
+const pageMap={home:'page-home',about:'page-about',services:'page-services',shop:'page-shop',appt:'page-appt',blog:'page-blog',contact:'page-contact',auth:'page-auth',profile:'page-profile',reviews:'page-reviews',review:'page-review',forbidden:'page-403',order:'page-order',payment:'page-payment'};
 const navMap={home:'nb-home',about:'nb-about',services:'nb-services',shop:'nb-shop',blog:'nb-blog',contact:'nb-contact',auth:'nb-auth'};
 function go(id){
   // Tek sayfa uygulamada sayfalar arası geçişleri yöneten ana fonksiyon.
@@ -1083,6 +1118,7 @@ function go(id){
     if(activeNav)activeNav.classList.add('on');
   }
   if(id==='profile'){loadProfile().catch(e=>toast(e.message || 'Profil yüklenemedi','err'));}
+  if(id==='review'){loadPurchasedProducts().catch(()=>{});}
   if(id==='appt'){
     if(currentUser && !PROFILE.user){
       loadProfile().then(()=>applyAppointmentMemberMode()).catch(()=>applyAppointmentMemberMode());
