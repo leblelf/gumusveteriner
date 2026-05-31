@@ -1,17 +1,17 @@
 ﻿from __future__ import annotations
 
 """
-Gumus Veteriner web uygulamasi backend dosyasi.
+Gümüş Veteriner web uygulaması backend dosyası.
 
-Bu dosya iki ana isi yapar:
-1. SQLite veritabanini olusturur ve randevu, uye, adres, hayvan, siparis gibi
+Bu dosya iki ana işi yapar:
+1. SQLite veritabanını oluşturur ve randevu, üye, adres, hayvan, sipariş gibi
    verileri kaydeder.
-2. Railway/Gunicorn icin Flask `app` nesnesini verir. Canli ortamda Railway
-   `gunicorn app:app` komutu ile buradaki `app` degiskenini calistirir.
+2. Railway/Render/Gunicorn için Flask `app` nesnesini verir. Canlı ortam
+   `gunicorn app:app` komutu ile buradaki `app` değişkenini çalıştırır.
 
-Not: Dosyada eski stdlib HTTP handler yapisi korunuyor; Flask adaptoru altta bu
-mevcut is mantigini tekrar kullanir. Boylece onceki API kodlari bozulmadan
-Railway uyumlu hale gelir.
+Not: Dosyada eski stdlib HTTP handler yapısı korunuyor; Flask adaptörü altta bu
+mevcut iş mantığını tekrar kullanır. Böylece önceki API kodları bozulmadan
+deploy uyumlu hale gelir.
 """
 
 import json
@@ -22,6 +22,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 from functools import wraps
 from datetime import date, datetime, timedelta
 from http import HTTPStatus
@@ -36,32 +37,51 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.errors import RateLimitExceeded
 from flask_limiter.util import get_remote_address
+from flask_sqlalchemy import SQLAlchemy
+from flask_talisman import Talisman
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 from services.email_service import EmailResult, send_email
+from services.database import normalize_database_url
 from services.sms_service import load_local_env, send_sms, validate_sms_message, normalize_tr_phone
 
 
 # ---------------------------------------------------------------------------
-# Uygulama ayarlari
+# Uygulama ayarları
 # ---------------------------------------------------------------------------
-# Dosya yollari, deploy bilgileri ve uygulama genel sabitleri burada durur.
-# Render/Railway gibi servisler PORT degerini ortam degiskeni olarak verir.
+# Dosya yolları, deploy bilgileri ve uygulama genel sabitleri burada durur.
+# Render/Railway gibi servisler PORT değerini ortam değişkeni olarak verir.
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "gumus_veteriner.db"
 HOST = "0.0.0.0"
+load_local_env()
 PORT = int(os.environ.get("PORT", 5000))
-JWT_SECRET = os.environ.get("JWT_SECRET", "gumus-veteriner-change-this-secret")
+IS_PRODUCTION = bool(os.environ.get("RENDER") or os.environ.get("RAILWAY_ENVIRONMENT"))
+
+
+def environment_secret(name: str) -> str:
+    """Secret değerlerini production ortamında yalnızca Environment üzerinden alır."""
+    value = (os.environ.get(name) or "").strip()
+    if value:
+        return value
+    if IS_PRODUCTION:
+        raise RuntimeError(f"{name} Render Environment içinde tanımlanmalıdır.")
+    # Local geliştirmede kaynak koda sabit bir secret yazmadan geçici anahtar üretir.
+    return secrets.token_urlsafe(48)
+
+
+SECRET_KEY = environment_secret("SECRET_KEY")
+JWT_SECRET = (os.environ.get("JWT_SECRET") or SECRET_KEY).strip()
 DEPLOY_VERSION = (
     os.environ.get("RENDER_GIT_COMMIT")
     or os.environ.get("RAILWAY_GIT_COMMIT_SHA")
     or os.environ.get("GIT_COMMIT")
     or "local"
 )[:12]
-SITE_URL = "https://wwwgumusvet.com"
+SITE_URL = (os.environ.get("SITE_URL") or "https://wwwgumusvet.com").rstrip("/")
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", 5 * 1024 * 1024))
 ALLOWED_UPLOAD_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
 ALLOWED_UPLOAD_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
@@ -70,18 +90,38 @@ DEFAULT_APPOINTMENT_TIMES = [
     "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30",
 ]
 
-# Render/Railway ve Gunicorn bu degiskeni arar: `gunicorn app:app`.
+# Render/Railway ve Gunicorn bu değişkeni arar: `gunicorn app:app`.
 app = Flask(__name__, static_folder=None)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
-app.secret_key = os.environ.get("SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY") or JWT_SECRET
+app.secret_key = SECRET_KEY
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=True,
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
     MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES,
+    SQLALCHEMY_DATABASE_URI=normalize_database_url(
+        os.environ.get("DATABASE_URL") or f"sqlite:///{DB_PATH.as_posix()}"
+    ),
+    SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    SQLALCHEMY_ENGINE_OPTIONS={
+        "pool_pre_ping": True,
+        "pool_recycle": 1800,
+        "pool_size": int(os.environ.get("DB_POOL_SIZE", "5")),
+        "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", "10")),
+    },
 )
-CORS(app)
+ALLOWED_CORS_ORIGINS = {
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGIN", SITE_URL).split(",")
+    if origin.strip()
+}
+CORS(
+    app,
+    resources={r"/api/*": {"origins": list(ALLOWED_CORS_ORIGINS)}},
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
+    methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+)
 limiter = Limiter(
     get_remote_address,
     app=app,
@@ -90,23 +130,38 @@ limiter = Limiter(
 )
 oauth = OAuth(app)
 GOOGLE_OAUTH_REGISTERED = False
+Talisman(
+    app,
+    force_https=IS_PRODUCTION,
+    frame_options="DENY",
+    strict_transport_security=True,
+    strict_transport_security_max_age=31536000,
+    content_security_policy=None,  # CSP aşağıdaki ortak response katmanında yönetilir.
+)
+sqlalchemy_db = SQLAlchemy(app)
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 security_logger = logging.getLogger("gumus_veteriner.security")
+_DB_INIT_LOCK = threading.Lock()
+_DB_INITIALIZED = False
 
 
 def connect() -> sqlite3.Connection:
-    """SQLite veritabanina baglanir ve satirlari sozluk gibi okunabilir yapar."""
-    db = sqlite3.connect(DB_PATH)
+    """Local SQLite veritabanına bağlanır ve satırları sözlük gibi okunabilir yapar."""
+    DB_PATH.parent.mkdir(exist_ok=True)
+    db = sqlite3.connect(DB_PATH, timeout=15)
     db.row_factory = sqlite3.Row
+    db.execute("PRAGMA foreign_keys = ON")
+    db.execute("PRAGMA busy_timeout = 5000")
     return db
 
 
 def init_db() -> None:
-    """Uygulama icin gereken tum tablolar yoksa olusturulur."""
+    """Uygulama için gereken tüm tablolar yoksa oluşturulur."""
     with connect() as db:
-        # SQL semasi tek yerde tutuluyor. Yeni tablo/kolon eklerken once buraya
-        # bak; uygulama acilisinda eksik yapilar otomatik tamamlanir.
+        db.execute("PRAGMA journal_mode = WAL")
+        # SQL şeması tek yerde tutuluyor. Yeni tablo/kolon eklerken önce buraya
+        # bak; uygulama açılışında eksik yapılar otomatik tamamlanır.
         db.executescript(
             """
             CREATE TABLE IF NOT EXISTS appointments (
@@ -287,6 +342,17 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS admin_audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_username TEXT,
+                action TEXT NOT NULL,
+                target_type TEXT,
+                target_id TEXT,
+                details TEXT,
+                ip_address TEXT,
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS services (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -333,8 +399,27 @@ def init_db() -> None:
         db.commit()
 
 
+def ensure_database_initialized() -> None:
+    """Tablo kurulumunu worker başına yalnızca bir kez çalıştırır."""
+    global _DB_INITIALIZED
+    if _DB_INITIALIZED:
+        return
+    with _DB_INIT_LOCK:
+        if _DB_INITIALIZED:
+            return
+        DB_PATH.parent.mkdir(exist_ok=True)
+        init_db()
+        _DB_INITIALIZED = True
+
+
 def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
-    """Eski veritabanlarina yeni kolon eklemek icin guvenli migration yardimcisi."""
+    """Eski veritabanlarina yeni kolon eklemek için güvenli migration yardımcısı."""
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+        raise ValueError("Geçersiz tablo adı")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", column):
+        raise ValueError("Geçersiz kolon adı")
+    if not re.fullmatch(r"[A-Za-z0-9_ ()'.,-]+", definition):
+        raise ValueError("Geçersiz kolon tanımı")
     columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
     if column not in columns:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
@@ -345,7 +430,7 @@ def row_to_dict(row: sqlite3.Row) -> dict:
 
 
 def get_csrf_token() -> str:
-    """Browser tabanli formlar icin session'a bagli CSRF token uretir."""
+    """Browser tabanlı formlar için session'a bağlı CSRF token üretir."""
     token = session.get("csrf_token")
     if not token:
         token = secrets.token_urlsafe(32)
@@ -361,12 +446,12 @@ def csrf_required_for_request() -> bool:
         return False
     if request.headers.get("Authorization", "").startswith("Bearer "):
         return False
-    # Mobil/masaustu uygulamalar Origin/Referer gondermeyebilir; CSRF tarayici yuzeyi icindir.
+    # Mobil/masaüstü uygulamalar Origin/Referer göndermeyebilir; CSRF tarayıcı yüzeyi içindir.
     return bool(request.headers.get("Origin") or request.headers.get("Referer"))
 
 
 def validate_upload_file(file_storage) -> str:
-    """Dosya yukleme acilirsa uzanti, mime type ve dosya adini guvenli hale getirir."""
+    """Dosya yukleme acilirsa uzanti, mime type ve dosya adini güvenli hale getirir."""
     filename = secure_filename(file_storage.filename or "")
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     mimetype = (file_storage.mimetype or "").lower()
@@ -378,7 +463,7 @@ def validate_upload_file(file_storage) -> str:
 
 
 def log_admin_login_attempt(username: str, success: bool) -> None:
-    """Admin giris denemelerini hem log dosyasina hem veritabanina yazar."""
+    """Admin giriş denemelerini hem log dosyasina hem veritabanına yazar."""
     ip_address = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
     user_agent = request.headers.get("User-Agent", "")[:250]
     security_logger.info("admin_login username=%s success=%s ip=%s", username, success, ip_address)
@@ -396,8 +481,46 @@ def log_admin_login_attempt(username: str, success: bool) -> None:
         security_logger.exception("admin_login_attempt_log_failed")
 
 
+def log_admin_action(action: str, target_type: str = "", target_id: str | int = "", details: str = "") -> None:
+    """Admin uygulamasındaki kritik değişiklikleri güvenlik kaydına ekler."""
+    auth = request.headers.get("Authorization", "")
+    token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+    payload = decode_admin_jwt(token) if token else None
+    username = (payload or {}).get("username", "unknown")
+    ip_address = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    security_logger.info(
+        "admin_action username=%s action=%s target=%s:%s ip=%s",
+        username,
+        action,
+        target_type,
+        target_id,
+        ip_address,
+    )
+    try:
+        with connect() as db:
+            db.execute(
+                """
+                INSERT INTO admin_audit_logs
+                (admin_username, action, target_type, target_id, details, ip_address, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    username,
+                    action,
+                    target_type,
+                    str(target_id),
+                    details[:500],
+                    ip_address,
+                    datetime.now().isoformat(timespec="seconds"),
+                ),
+            )
+            db.commit()
+    except Exception:
+        security_logger.exception("admin_action_log_failed")
+
+
 def validate_phone(phone: str) -> str:
-    """Telefonu 05XXXXXXXXX formatinda zorunlu ve temiz hale getirir."""
+    """Telefonu 05XXXXXXXXX formatında zorunlu ve temiz hale getirir."""
     clean = re.sub(r"\s+", "", phone or "")
     if not re.fullmatch(r"0[0-9]{10}", clean):
         raise ValueError("Gecerli telefon: 05XX XXX XX XX")
@@ -412,14 +535,19 @@ def validate_email(email: str) -> str:
 
 
 def hash_password(password: str, salt: bytes | None = None) -> tuple[str, str]:
-    """Sifreleri duz metin yerine Werkzeug hash olarak saklar."""
+    """Şifreleri düz metin yerine Werkzeug hash olarak saklar."""
     if len(password or "") < 6:
-        raise ValueError("Sifre en az 6 karakter olmali")
+        raise ValueError("Şifre en az 6 karakter olmalı")
     return generate_password_hash(password), "werkzeug"
 
 
+def hash_reset_token(token: str) -> str:
+    """Şifre sıfırlama tokenını veritabanında düz metin yerine SHA-256 olarak saklar."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def verify_password(password: str, password_hash: str, password_salt: str) -> bool:
-    """Yeni Werkzeug hashlerini ve eski PBKDF2 kayitlarini dogrular."""
+    """Yeni Werkzeug hashlerini ve eski PBKDF2 kayıtlarını doğrular."""
     if password_salt == "werkzeug" or password_hash.startswith(("scrypt:", "pbkdf2:")):
         return check_password_hash(password_hash, password)
     legacy_digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(password_salt), 120_000)
@@ -427,29 +555,33 @@ def verify_password(password: str, password_hash: str, password_salt: str) -> bo
 
 
 def seed_admin(db: sqlite3.Connection) -> None:
-    """Ilk kurulumda varsayilan admin kullanicisini olusturur."""
-    email = "gumusveterinermuayenehanesi@gmail.com"
+    """İlk kurulumda Environment üzerinden verilen admin hesabını oluşturur."""
+    email = (os.environ.get("INITIAL_ADMIN_EMAIL") or "gumusveterinermuayenehanesi@gmail.com").strip().lower()
+    initial_password = (os.environ.get("INITIAL_ADMIN_PASSWORD") or "").strip()
     old_email = "admin@gumusveteriner.com"
-    password_hash, password_salt = hash_password("ColCvS20*")
     now = datetime.now().isoformat(timespec="seconds")
     current = db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
     old = db.execute("SELECT id FROM users WHERE email = ?", (old_email,)).fetchone()
     if current:
         db.execute(
-            "UPDATE users SET full_name = ?, password_hash = ?, password_salt = ?, role = 'admin', is_banned = 0 WHERE id = ?",
-            ("Gümüş Veteriner Muayenehanesi", password_hash, password_salt, current["id"]),
+            "UPDATE users SET full_name = ?, role = 'admin', is_banned = 0 WHERE id = ?",
+            ("Gümüş Veteriner Muayenehanesi", current["id"]),
         )
         return
     if old:
         db.execute(
             """
             UPDATE users
-            SET full_name = ?, email = ?, password_hash = ?, password_salt = ?, role = 'admin', is_banned = 0
+            SET full_name = ?, email = ?, role = 'admin', is_banned = 0
             WHERE id = ?
             """,
-            ("Gümüş Veteriner Muayenehanesi", email, password_hash, password_salt, old["id"]),
+            ("Gümüş Veteriner Muayenehanesi", email, old["id"]),
         )
         return
+    if not initial_password:
+        security_logger.warning("initial_admin_skipped INITIAL_ADMIN_PASSWORD tanımlı değil")
+        return
+    password_hash, password_salt = hash_password(initial_password)
     db.execute(
         """
         INSERT INTO users (full_name, email, phone, password_hash, password_salt, role, created_at)
@@ -460,28 +592,31 @@ def seed_admin(db: sqlite3.Connection) -> None:
 
 
 def seed_api_admin(db: sqlite3.Connection) -> None:
-    """Mobil/masaustu admin uygulamasi icin ilk JWT admin hesabini olusturur."""
-    username = "gumusveterinermuayenehanesi@gmail.com"
+    """Mobil/masaüstü admin uygulaması için ilk JWT admin hesabını oluşturur."""
+    username = (os.environ.get("INITIAL_ADMIN_EMAIL") or "gumusveterinermuayenehanesi@gmail.com").strip().lower()
+    initial_password = (os.environ.get("INITIAL_ADMIN_PASSWORD") or "").strip()
     legacy_username = "admin"
-    default_hash = generate_password_hash("ColCvS20*")
     current = db.execute("SELECT id FROM admins WHERE username = ?", (username,)).fetchone()
     legacy = db.execute("SELECT id FROM admins WHERE username = ?", (legacy_username,)).fetchone()
     if current:
-        db.execute("UPDATE admins SET password_hash = ? WHERE id = ?", (default_hash, current["id"]))
         if legacy:
             db.execute("DELETE FROM admins WHERE id = ?", (legacy["id"],))
         return
     if legacy:
         db.execute(
-            "UPDATE admins SET username = ?, password_hash = ? WHERE id = ?",
-            (username, default_hash, legacy["id"]),
+            "UPDATE admins SET username = ? WHERE id = ?",
+            (username, legacy["id"]),
         )
         return
+    if not initial_password:
+        security_logger.warning("initial_api_admin_skipped INITIAL_ADMIN_PASSWORD tanımlı değil")
+        return
+    default_hash = generate_password_hash(initial_password)
     db.execute("INSERT INTO admins (username, password_hash) VALUES (?, ?)", (username, default_hash))
 
 
 def seed_site_content(db: sqlite3.Connection) -> None:
-    """Admin uygulamasindan yonetilecek site metinleri ve yorumlari icin ilk veriler."""
+    """Admin uygulamasından yönetilecek site metinleri ve yorumları için ilk veriler."""
     now = datetime.now().isoformat(timespec="seconds")
     texts = [
         ("hero_title", "Ana sayfa başlığı", "Dostlarınız İçin\nEn Güvenilir Bakım"),
@@ -560,25 +695,25 @@ def validate_appointment(data: dict) -> dict:
     try:
         selected = datetime.strptime(data["appt_date"], "%Y-%m-%d").date()
     except ValueError as exc:
-        raise ValueError("Tarih YYYY-MM-DD formatinda olmali") from exc
+        raise ValueError("Tarih YYYY-MM-DD formatında olmalı") from exc
 
     if selected < date.today():
         raise ValueError("Gecmis tarih secilemez")
     if selected > date.today() + timedelta(days=60):
-        raise ValueError("En fazla 60 gun ileriye randevu alinabilir")
+        raise ValueError("En fazla 60 gün ileriye randevu alinabilir")
     if not re.fullmatch(r"\d{2}:\d{2}", str(data.get("appt_time", ""))):
-        raise ValueError("Saat HH:MM formatinda olmali")
+        raise ValueError("Saat HH:MM formatında olmalı")
     return data
 
 
 def apply_member_appointment_defaults(data: dict, user: sqlite3.Row | None) -> dict:
-    """Uye girisi varsa randevu formunda kisisel bilgileri otomatik tamamlar."""
+    """Üye girişi varsa randevu formunda kişisel bilgileri otomatik tamamlar."""
     if not user:
         return data
     prepared = dict(data)
-    full_name = (user["full_name"] or "Uye").strip()
+    full_name = (user["full_name"] or "Üye").strip()
     parts = full_name.split()
-    prepared["first_name"] = prepared.get("first_name") or (parts[0] if parts else "Uye")
+    prepared["first_name"] = prepared.get("first_name") or (parts[0] if parts else "Üye")
     prepared["last_name"] = prepared.get("last_name") or (" ".join(parts[1:]) if len(parts) > 1 else "Gumus")
     prepared["phone"] = prepared.get("phone") or (user["phone"] or "")
     prepared["email"] = prepared.get("email") or (user["email"] or "")
@@ -588,7 +723,7 @@ def apply_member_appointment_defaults(data: dict, user: sqlite3.Row | None) -> d
 
 
 def appointment_slot_summary(db: sqlite3.Connection, appt_date: str) -> list[dict]:
-    """Bir gun icin MHRS benzeri bos/dolu/kapali saat listesini hazirlar."""
+    """Bir gün için MHRS benzeri boş/dolu/kapalı saat listesini hazırlar."""
     slots = {
         row["appt_time"]: row
         for row in db.execute(
@@ -626,14 +761,14 @@ def appointment_slot_summary(db: sqlite3.Connection, appt_date: str) -> list[dic
 
 
 def is_appointment_time_available(db: sqlite3.Connection, appt_date: str, appt_time: str) -> bool:
-    """Ayni tarih/saat icin ikinci aktif randevuyu engeller."""
+    """Aynı tarih/saat için ikinci aktif randevuyu engeller."""
     rows = appointment_slot_summary(db, appt_date)
     match = next((row for row in rows if row["time"] == appt_time), None)
     return bool(match and match["available"])
 
 
 def get_request_session_user() -> sqlite3.Row | None:
-    """Flask route'larinda Authorization token'i ile uye bilgisini bulur."""
+    """Flask route'larında Authorization token'ı ile üye bilgisini bulur."""
     auth = request.headers.get("Authorization", "")
     token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
     if not token:
@@ -654,7 +789,7 @@ def get_request_session_user() -> sqlite3.Row | None:
 
 
 def create_user_session(db: sqlite3.Connection, user: sqlite3.Row, remember: bool = False) -> str:
-    """Kullanici icin hem veritabani token'i hem Flask session kaydi olusturur."""
+    """Kullanıcı için hem veritabanı token'ı hem Flask session kaydı oluşturur."""
     token = secrets.token_urlsafe(32)
     db.execute(
         "INSERT INTO sessions (token, user_id, role, created_at) VALUES (?, ?, ?, ?)",
@@ -668,7 +803,7 @@ def create_user_session(db: sqlite3.Connection, user: sqlite3.Row, remember: boo
 
 
 def login_required(view):
-    """Flask route'lari icin basit uye girisi korumasi."""
+    """Flask route'ları için basit üye girişi koruması."""
     @wraps(view)
     def wrapped(*args, **kwargs):
         user = get_request_session_user()
@@ -679,7 +814,7 @@ def login_required(view):
 
 
 class UserModel:
-    """Google ve klasik uye kayitlarinin ayni users tablosunda tutulmasini saglar."""
+    """Google ve klasik üye kayıtlarının aynı users tablosunda tutulmasını sağlar."""
 
     @staticmethod
     def find_by_google_or_email(db: sqlite3.Connection, google_id: str, email: str) -> sqlite3.Row | None:
@@ -695,7 +830,7 @@ class UserModel:
         name = (profile.get("name") or email.split("@")[0]).strip()
         picture = (profile.get("picture") or "").strip()
         if not google_id:
-            raise ValueError("Google kullanici kimligi alinamadi")
+            raise ValueError("Google kullanıcı kimligi alinamadi")
 
         existing = UserModel.find_by_google_or_email(db, google_id, email)
         if existing:
@@ -732,7 +867,7 @@ class UserModel:
 
 
 def ensure_google_oauth():
-    """Google OAuth istemcisini ortam degiskenleri varsa kaydeder."""
+    """Google OAuth istemcisini ortam değişkenleri varsa kaydeder."""
     global GOOGLE_OAUTH_REGISTERED
     load_local_env()
     client_id = (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
@@ -787,12 +922,12 @@ def send_order_status_email(order: dict, status: str) -> EmailResult | None:
 
 
 def api_response(success: bool, message: str, data=None, status: HTTPStatus = HTTPStatus.OK):
-    """Web ve admin uygulamasinin bekledigi standart JSON cevap formati."""
+    """Web ve admin uygulamasının beklediği standart JSON cevap formatı."""
     return {"success": success, "message": message, "data": data}, int(status)
 
 
 def create_admin_jwt(admin_id: int, username: str) -> str:
-    """Admin API icin 7 gun gecerli JWT token uretir."""
+    """Admin API için 7 gün geçerli JWT token üretir."""
     payload = {
         "sub": str(admin_id),
         "username": username,
@@ -804,7 +939,7 @@ def create_admin_jwt(admin_id: int, username: str) -> str:
 
 
 def decode_admin_jwt(token: str) -> dict | None:
-    """Authorization header icindeki JWT token'i cozer."""
+    """Authorization header içindeki JWT token'ı çözer."""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     except jwt.PyJWTError:
@@ -816,6 +951,7 @@ def decode_admin_jwt(token: str) -> dict | None:
 
 def require_admin_api(func):
     """Flask admin API endpointlerini JWT ile koruyan decorator."""
+    @limiter.limit("60 per minute")
     @wraps(func)
     def wrapper(*args, **kwargs):
         auth = request.headers.get("Authorization", "")
@@ -831,17 +967,17 @@ def require_admin_api(func):
 class GumusVeterinerHandler(SimpleHTTPRequestHandler):
     """Eski saf-Python HTTP handler.
 
-    Proje ilk baslarda Flask olmadan yazildigi icin bazi is kurallari burada
-    duruyor. Alttaki Flask adapter bu metotlari kullanarak eski davranisi
+    Proje ilk başlarda Flask olmadan yazıldığı için bazı iş kuralları burada
+    duruyor. Alttaki Flask adapter bu metotları kullanarak eski davranışı
     koruyor. Bu sayede web sitesi ve admin API'leri yeniden yazilmadan deploy
     edilebilir hale geldi.
     """
 
-    """Eski local sunucu/API is mantigi.
+    """Eski local sunucu/API iş mantığı.
 
-    Bu sinif randevu, siparis, uye, admin ve profil API'lerini yonetir.
-    Flask adaptoru bu metodlari tekrar kullanarak Railway'de de ayni
-    davranisin calismasini saglar.
+    Bu sınıf randevu, sipariş, üye, admin ve profil API'lerini yönetir.
+    Flask adaptörü bu metotları tekrar kullanarak Railway/Render üzerinde de
+    aynı davranışın çalışmasını sağlar.
     """
 
     def translate_path(self, path: str) -> str:
@@ -851,7 +987,10 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         return str(ROOT / parsed.path.lstrip("/"))
 
     def end_headers(self) -> None:
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        if origin in ALLOWED_CORS_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         super().end_headers()
@@ -927,7 +1066,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
 
         status = parse_qs(parsed.query).get("status", [""])[0]
         if status not in {"pending", "confirmed", "cancelled", "completed"}:
-            self.send_json({"error": "Gecersiz durum"}, HTTPStatus.BAD_REQUEST)
+            self.send_json({"error": "Geçersiz durum"}, HTTPStatus.BAD_REQUEST)
             return
 
         with connect() as db:
@@ -990,14 +1129,14 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             return True
         user = self.get_session_user()
         if not user or user["role"] != "admin":
-            self.send_json({"error": "Admin girisi gerekli"}, HTTPStatus.UNAUTHORIZED)
+            self.send_json({"error": "Admin girişi gerekli"}, HTTPStatus.UNAUTHORIZED)
             return False
         return True
 
     def require_user(self) -> sqlite3.Row | None:
         user = self.get_session_user()
         if not user:
-            self.send_json({"error": "Uye girisi gerekli"}, HTTPStatus.UNAUTHORIZED)
+            self.send_json({"error": "Üye girişi gerekli"}, HTTPStatus.UNAUTHORIZED)
             return None
         if user["is_banned"]:
             self.send_json({"error": "Hesabiniz pasif hale getirildi."}, HTTPStatus.UNAUTHORIZED)
@@ -1013,7 +1152,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def handle_api_get(self, parsed) -> None:
-        """GET istekleri: urunler, profil, admin listeleri ve istatistikler."""
+        """GET istekleri: ürünler, profil, admin listeleri ve istatistikler."""
         if parsed.path == "/api/products":
             query = parse_qs(parsed.query)
             category = query.get("category", [None])[0]
@@ -1112,7 +1251,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json({"error": "Endpoint bulunamadi"}, HTTPStatus.NOT_FOUND)
 
     def create_appointment(self) -> None:
-        """Online randevu formunu kaydeder ve hatirlatma kayitlarini olusturur."""
+        """Online randevu formunu kaydeder ve hatırlatma kayıtlarını oluşturur."""
         try:
             user = self.get_session_user()
             data = validate_appointment(apply_member_appointment_defaults(self.read_json(), user))
@@ -1139,7 +1278,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                             (user["id"], pet_name, pet_species, now),
                         )
             if not is_appointment_time_available(db, data["appt_date"], data["appt_time"]):
-                self.send_json({"error": "Bu randevu saati dolu veya kapali. Lutfen baska bir saat secin."}, HTTPStatus.CONFLICT)
+                self.send_json({"error": "Bu randevu saati dolu veya kapalı. Lutfen baska bir saat secin."}, HTTPStatus.CONFLICT)
                 return
             try:
                 cursor = db.execute(
@@ -1174,7 +1313,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json(row_to_dict(row), HTTPStatus.CREATED)
 
     def create_purchase_review(self) -> None:
-        """Sadece daha once siparis olusturan uyelerin yorum eklemesini saglar."""
+        """Sadece daha önce sipariş oluşturan üyelerin yorum eklemesini sağlar."""
         user = self.require_user()
         if not user:
             return
@@ -1182,16 +1321,16 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             data = self.read_json()
             rating = int(data.get("rating") or 5)
         except (json.JSONDecodeError, ValueError):
-            self.send_json({"error": "Gecersiz yorum verisi"}, HTTPStatus.BAD_REQUEST)
+            self.send_json({"error": "Geçersiz yorum verisi"}, HTTPStatus.BAD_REQUEST)
             return
         message = (data.get("message") or "").strip()
         pet_type = (data.get("pet_type") or "Hasta Sahibi").strip()
         product_name = (data.get("product_name") or "Genel").strip()
         if rating < 1 or rating > 5:
-            self.send_json({"error": "Puan 1 ile 5 arasinda olmali"}, HTTPStatus.BAD_REQUEST)
+            self.send_json({"error": "Puan 1 ile 5 arasinda olmalı"}, HTTPStatus.BAD_REQUEST)
             return
         if len(message) < 8:
-            self.send_json({"error": "Yorum en az 8 karakter olmali"}, HTTPStatus.BAD_REQUEST)
+            self.send_json({"error": "Yorum en az 8 karakter olmalı"}, HTTPStatus.BAD_REQUEST)
             return
         if len(message) > 500:
             self.send_json({"error": "Yorum en fazla 500 karakter olabilir"}, HTTPStatus.BAD_REQUEST)
@@ -1199,7 +1338,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         with connect() as db:
             purchased = db.execute("SELECT COUNT(*) FROM orders WHERE user_id = ?", (user["id"],)).fetchone()[0]
             if purchased < 1:
-                self.send_json({"error": "Yorum yapabilmek icin once satin alma yapmis olmalisiniz."}, HTTPStatus.FORBIDDEN)
+                self.send_json({"error": "Yorum yapabilmek için önce satın alma yapmış olmalısiniz."}, HTTPStatus.FORBIDDEN)
                 return
             cursor = db.execute(
                 """
@@ -1213,7 +1352,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json(row_to_dict(row), HTTPStatus.CREATED)
 
     def create_reminder_rows(self, db: sqlite3.Connection, appointment_id: int, data: dict) -> None:
-        """Randevu yaklasinca gonderilecek SMS/e-posta hatirlatma kayitlari."""
+        """Randevu yaklasinca gonderilecek SMS/e-posta hatırlatma kayitlari."""
         try:
             appt_at = datetime.strptime(f"{data['appt_date']} {data['appt_time']}", "%Y-%m-%d %H:%M")
         except ValueError:
@@ -1237,13 +1376,13 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 )
 
     def create_order(self) -> None:
-        """Sepetteki urunleri siparise cevirir, stoktan duser ve demo odeme bilgisini saklar."""
+        """Sepetteki ürünleri siparişe çevirir, stoktan düşer ve demo ödeme bilgisini saklar."""
         try:
             data = self.read_json()
             user = self.get_session_user()
             items = data.get("items") or []
             if not items:
-                raise ValueError("Sepet bos")
+                raise ValueError("Sepet boş")
             card_number = re.sub(r"\D+", "", data.get("card_number", ""))
             card_name = (data.get("card_name") or "").strip()
             card_expiry = (data.get("card_expiry") or "").strip()
@@ -1251,7 +1390,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             if not card_name or not re.fullmatch(r"\d{12,19}", card_number):
                 raise ValueError("Gecerli kart bilgisi girin")
             if not re.fullmatch(r"(0[1-9]|1[0-2])\s*/\s*\d{2}", card_expiry):
-                raise ValueError("Son kullanma tarihi AA/YY formatinda olmali")
+                raise ValueError("Son kullanma tarihi AA/YY formatında olmalı")
             if not re.fullmatch(r"\d{3,4}", card_cvc):
                 raise ValueError("Gecerli CVC girin")
         except (json.JSONDecodeError, ValueError) as exc:
@@ -1297,14 +1436,14 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 product_id = int(item["product_id"])
                 quantity = int(item["quantity"])
                 if quantity < 1:
-                    self.send_json({"error": "Miktar en az 1 olmali"}, HTTPStatus.BAD_REQUEST)
+                    self.send_json({"error": "Miktar en az 1 olmalı"}, HTTPStatus.BAD_REQUEST)
                     return
                 product = db.execute("SELECT * FROM products WHERE id = ? AND active = 1", (product_id,)).fetchone()
                 if not product:
                     self.send_json({"error": f"Urun bulunamadi: {product_id}"}, HTTPStatus.NOT_FOUND)
                     return
                 if product["stock"] < quantity:
-                    self.send_json({"error": f"{product['name']} icin yeterli stok yok"}, HTTPStatus.BAD_REQUEST)
+                    self.send_json({"error": f"{product['name']} için yeterli stok yok"}, HTTPStatus.BAD_REQUEST)
                     return
                 total += product["price"] * quantity
                 product_rows.append((product, quantity))
@@ -1345,7 +1484,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json(order, HTTPStatus.CREATED)
 
     def create_address(self) -> None:
-        """Uyenin profilindeki teslimat adresini veritabanina ekler."""
+        """Üyenin profilindeki teslimat adresini veritabanına ekler."""
         user = self.require_user()
         if not user:
             return
@@ -1376,7 +1515,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json(row_to_dict(row), HTTPStatus.CREATED)
 
     def create_pet(self) -> None:
-        """Uyenin profilindeki hayvan kaydini veritabanina ekler."""
+        """Üyenin profilindeki hayvan kaydıni veritabanına ekler."""
         user = self.require_user()
         if not user:
             return
@@ -1434,7 +1573,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             if not data.get("full_name") or not data.get("email"):
                 raise ValueError("Ad soyad ve email zorunlu")
             if len((data.get("message") or "").strip()) < 10:
-                raise ValueError("Mesaj en az 10 karakter olmali")
+                raise ValueError("Mesaj en az 10 karakter olmalı")
         except (json.JSONDecodeError, ValueError) as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -1454,7 +1593,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         self.send_json({"message": "Mesajiniz iletildi."}, HTTPStatus.CREATED)
 
     def create_user(self) -> None:
-        """Yeni uye kaydi olusturur; telefon ve sifre kontrollerini yapar."""
+        """Yeni üye kaydı oluşturur; telefon ve şifre kontrollerini yapar."""
         try:
             data = self.read_json()
             full_name = (data.get("full_name") or "").strip()
@@ -1489,13 +1628,13 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                     (cursor.lastrowid,),
                 ).fetchone()
         except sqlite3.IntegrityError:
-            self.send_json({"error": "Bu email ile kayitli bir uye zaten var"}, HTTPStatus.CONFLICT)
+            self.send_json({"error": "Bu email ile kayıtlı bir üye zaten var"}, HTTPStatus.CONFLICT)
             return
 
         self.send_json(row_to_dict(user), HTTPStatus.CREATED)
 
     def login_user(self, required_role: str) -> None:
-        """Normal uye veya admin girisini kontrol eder ve session token uretir."""
+        """Normal üye veya admin girişini kontrol eder ve session token üretir."""
         try:
             data = self.read_json()
             email = validate_email(data.get("email", ""))
@@ -1512,7 +1651,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 or user["role"] != required_role
                 or user["is_banned"]
             ):
-                message = "Bu panel yalnizca yoneticiler icindir." if user and user["role"] != required_role and required_role == "admin" else "Email veya sifre hatali"
+                message = "Bu panel yalnızca yöneticiler içindir." if user and user["role"] != required_role and required_role == "admin" else "Email veya şifre hatalı"
                 if user and user["is_banned"]:
                     message = "Hesabiniz pasif hale getirildi."
                 self.send_json({"error": message}, HTTPStatus.UNAUTHORIZED)
@@ -1548,20 +1687,20 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             with connect() as db:
                 db.execute("DELETE FROM sessions WHERE token = ?", (token,))
                 db.commit()
-        self.send_json({"message": "Cikis yapildi"})
+        self.send_json({"message": "Çıkış yapildi"})
 
     def update_admin_user(self, user_id: int) -> None:
         try:
             data = self.read_json()
         except json.JSONDecodeError:
-            self.send_json({"error": "Gecersiz JSON"}, HTTPStatus.BAD_REQUEST)
+            self.send_json({"error": "Geçersiz JSON"}, HTTPStatus.BAD_REQUEST)
             return
 
         updates = []
         params = []
         if "role" in data:
             if data["role"] not in {"member", "admin"}:
-                self.send_json({"error": "Gecersiz rol"}, HTTPStatus.BAD_REQUEST)
+                self.send_json({"error": "Geçersiz rol"}, HTTPStatus.BAD_REQUEST)
                 return
             updates.append("role = ?")
             params.append(data["role"])
@@ -1582,7 +1721,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 (user_id,),
             ).fetchone()
         if not user:
-            self.send_json({"error": "Kullanici bulunamadi"}, HTTPStatus.NOT_FOUND)
+            self.send_json({"error": "Kullanıcı bulunamadi"}, HTTPStatus.NOT_FOUND)
             return
         self.send_json(row_to_dict(user))
 
@@ -1590,18 +1729,18 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
         with connect() as db:
             user = db.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
             if not user:
-                self.send_json({"error": "Kullanici bulunamadi"}, HTTPStatus.NOT_FOUND)
+                self.send_json({"error": "Kullanıcı bulunamadi"}, HTTPStatus.NOT_FOUND)
                 return
             db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
             db.execute("DELETE FROM user_addresses WHERE user_id = ?", (user_id,))
             db.execute("DELETE FROM pets WHERE user_id = ?", (user_id,))
             db.execute("DELETE FROM users WHERE id = ?", (user_id,))
             db.commit()
-        self.send_json({"message": "Kullanici silindi"})
+        self.send_json({"message": "Kullanıcı silindi"})
 
 
 class FlaskGumusVeterinerAdapter(GumusVeterinerHandler):
-    """Flask request'lerini eski handler metodlarina baglayan kucuk adaptor."""
+    """Flask request'lerini eski handler metotlarına bağlayan küçük adaptör."""
 
     def __init__(self, path: str) -> None:
         self.path = path
@@ -1625,11 +1764,10 @@ class FlaskGumusVeterinerAdapter(GumusVeterinerHandler):
 
 @app.before_request
 def ensure_database_ready():
-    # Railway'de container ilk acildiginda data klasoru yoksa otomatik olusturulur.
+    # Railway'de container ilk açıldığında data klasörü yoksa otomatik oluşturulur.
     if request.path == "/health":
         return
-    DB_PATH.parent.mkdir(exist_ok=True)
-    init_db()
+    ensure_database_initialized()
     if csrf_required_for_request():
         sent_token = request.headers.get("X-CSRF-Token", "")
         if not sent_token or not hmac.compare_digest(sent_token, session.get("csrf_token", "")):
@@ -1638,8 +1776,11 @@ def ensure_database_ready():
 
 @app.after_request
 def add_security_headers(response: Response) -> Response:
-    # Frontend ayni domain altinda calissa da API testlerinde CORS sorunlarini engeller.
-    response.headers["Access-Control-Allow-Origin"] = os.environ.get("CORS_ORIGIN", "*")
+    # Yalnızca izin verilen web origin'lerine CORS cevabı eklenir.
+    request_origin = request.headers.get("Origin", "")
+    if request_origin in ALLOWED_CORS_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = request_origin
+        response.headers["Vary"] = "Origin"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-Token"
     response.headers["Content-Security-Policy"] = (
@@ -1656,6 +1797,7 @@ def add_security_headers(response: Response) -> Response:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     if request.path.startswith("/static/") or request.path.lower().endswith((".css", ".js", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif request.path in {"/", "/admin", "/admin/login"}:
@@ -1672,13 +1814,13 @@ def add_security_headers(response: Response) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Flask route'lari
+# Flask route'ları
 # ---------------------------------------------------------------------------
-# Bu bolum canli ortamda gelen HTTP isteklerini karsilar. Web sitesi HTML'i,
-# SEO dosyalari, public API'ler ve admin API'leri burada tanimlanir.
+# Bu bölüm canlı ortamda gelen HTTP isteklerini karşılar. Web sitesi HTML'i,
+# SEO dosyaları, public API'ler ve admin API'leri burada tanımlanır.
 @app.errorhandler(Exception)
 def handle_unexpected_error(error):
-    """Canli ortamda traceback gostermeden guvenli API hata cevabi doner."""
+    """Canlı ortamda traceback gostermeden güvenli API hata cevabi doner."""
     if isinstance(error, RateLimitExceeded):
         body, status = api_response(False, "Çok fazla istek gönderildi. Lütfen biraz bekleyin.", None, HTTPStatus.TOO_MANY_REQUESTS)
         return body, status
@@ -1688,9 +1830,15 @@ def handle_unexpected_error(error):
             return body, status
         return error
     if request.path.startswith("/api/"):
+        security_logger.exception("unhandled_api_error path=%s", request.path)
         body, status = api_response(False, "Sunucu hatası. Lütfen tekrar deneyin.", None, HTTPStatus.INTERNAL_SERVER_ERROR)
         return body, status
-    raise error
+    security_logger.exception("unhandled_page_error path=%s", request.path)
+    return Response(
+        "Beklenmeyen bir hata oluştu. Lütfen daha sonra tekrar deneyin.",
+        status=int(HTTPStatus.INTERNAL_SERVER_ERROR),
+        content_type="text/plain; charset=utf-8",
+    )
 
 
 @app.route("/")
@@ -1698,19 +1846,35 @@ def handle_unexpected_error(error):
 @app.route("/admin/login")
 @app.route("/403")
 def serve_app_index() -> str:
-    # Tum tek sayfa uygulama route'lari ayni index.html dosyasini kullanir.
+    # Tüm tek sayfa uygulama route'ları aynı index.html dosyasını kullanır.
     return render_template("index.html", asset_version=DEPLOY_VERSION, csrf_token=get_csrf_token())
+
+
+@app.route("/login")
+@limiter.limit("5 per minute")
+def login_page():
+    """SPA içindeki kullanıcı giriş ekranına yönlendirir."""
+    return redirect("/#login")
 
 
 @app.route("/health")
 def health() -> tuple[str, int]:
-    # Railway health check bu endpointten hizli cevap alir.
+    # Railway health check bu endpointten hızlı cevap alır.
     return "OK", 200
 
 
 @app.route("/api/health")
 def api_health():
-    return api_response(True, "API çalışıyor", {})
+    return api_response(
+        True,
+        "API çalışıyor",
+        {
+            "service": "gumus-veteriner",
+            "database_pool": "sqlalchemy-ready",
+            "runtime_database": "legacy-sqlite",
+            "configured_database": "postgresql" if os.environ.get("DATABASE_URL") else "sqlite",
+        },
+    )
 
 
 @app.route("/api/csrf-token")
@@ -1720,7 +1884,7 @@ def api_csrf_token():
 
 @app.route("/api/deploy-info")
 def api_deploy_info():
-    """Render/GitHub deployunun hangi surumu calistirdigini test etmek icin."""
+    """Render/GitHub deployunun hangi sürümü çalıştırdığını test etmek için."""
     data = {
         "version": DEPLOY_VERSION,
         "service": os.environ.get("RENDER_SERVICE_NAME", ""),
@@ -1739,7 +1903,7 @@ def api_deploy_info():
 
 @app.route("/robots.txt")
 def robots_txt() -> Response:
-    """Arama motorlarina tarama izni ve sitemap adresini bildirir."""
+    """Arama motorlarına tarama izni ve sitemap adresini bildirir."""
     content = f"""User-agent: *
 Allow: /
 
@@ -1750,13 +1914,13 @@ Sitemap: {SITE_URL}/sitemap.xml
 
 @app.route("/sitemap.xml")
 def sitemap_xml() -> Response:
-    """Google ve diger arama motorlari icin temel site haritasi uretir."""
+    """Google ve diğer arama motorları için temel site haritası üretir."""
     today = date.today().isoformat()
     urls = [
         (SITE_URL, "1.0", "weekly"),
         (f"{SITE_URL}/hizmetler", "0.8", "weekly"),
-        (f"{SITE_URL}/urunler", "0.8", "weekly"),
-        (f"{SITE_URL}/iletisim", "0.7", "monthly"),
+        (f"{SITE_URL}/ürünler", "0.8", "weekly"),
+        (f"{SITE_URL}/iletişim", "0.7", "monthly"),
     ]
     url_nodes = "\n".join(
         f"""  <url>
@@ -1776,21 +1940,25 @@ def sitemap_xml() -> Response:
 
 
 @app.route("/login/google")
+@limiter.limit("10 per hour")
 def google_login():
-    """Google OAuth akisini baslatir."""
+    """Google OAuth akışıni baslatir."""
     google = ensure_google_oauth()
     if not google:
         return redirect("/?google_error=missing_config")
     remember = request.args.get("remember") == "1"
     session["google_remember"] = remember
-    redirect_uri = url_for("google_authorized", _external=True)
+    redirect_uri = (
+        os.environ.get("GOOGLE_REDIRECT_URI")
+        or (f"{SITE_URL}/login/google/authorized" if IS_PRODUCTION else url_for("google_authorized", _external=True))
+    )
     return google.authorize_redirect(redirect_uri)
 
 
 @app.route("/login/google/authorized")
 @app.route("/auth/google/callback")
 def google_authorized():
-    """Google'dan donen kullaniciyi users tablosuna kaydeder veya eslestirir."""
+    """Google'dan donen kullanıcıyi users tablosuna kaydeder veya eslestirir."""
     google = ensure_google_oauth()
     if not google:
         return redirect("/?google_error=missing_config")
@@ -1807,12 +1975,13 @@ def google_authorized():
         session["google_login_token"] = session_token
         return redirect("/?google_login=success")
     except Exception:
+        security_logger.exception("google_oauth_failed")
         return redirect("/?google_error=oauth_failed")
 
 
 @app.route("/logout")
 def logout_page():
-    """Google veya normal uye oturumunu kapatip ana sayfaya dondurur."""
+    """Google veya normal üye oturumunu kapatip ana sayfaya dondurur."""
     token = session.get("session_token", "")
     if token:
         with connect() as db:
@@ -1824,7 +1993,7 @@ def logout_page():
 
 @app.route("/api/session", methods=["GET"])
 def api_session_user():
-    """Flask session cookie'sinden aktif kullaniciyi frontend'e verir."""
+    """Flask session cookie'sinden aktif kullanıcıyi frontend'e verir."""
     token = session.get("session_token") or session.pop("google_login_token", "")
     if not token:
         return api_response(False, "Aktif oturum yok", None, HTTPStatus.UNAUTHORIZED)
@@ -1847,7 +2016,7 @@ def api_session_user():
 
 @app.route("/api/logout", methods=["POST"])
 def api_logout():
-    """Hem bearer token'i hem Flask session cookie'sini kapatir."""
+    """Hem bearer token'ı hem Flask session cookie'sini kapatir."""
     auth = request.headers.get("Authorization", "")
     token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
     token = token or session.get("session_token", "")
@@ -1860,42 +2029,44 @@ def api_logout():
 
 
 @app.route("/api/forgot-password", methods=["POST"])
-@limiter.limit("5 per hour")
+@limiter.limit("3 per hour")
 def api_forgot_password():
-    """Uye sifresi unutuldugunda tek kullanimlik sifre sifirlama linki yollar."""
+    """Üye şifresi unutuldugünda tek kullanımlık şifre sıfırlama linki yollar."""
     data = request.get_json(silent=True) or {}
     try:
         email = validate_email(data.get("email", ""))
     except ValueError:
         return api_response(False, "Geçerli bir e-posta girin", None, HTTPStatus.BAD_REQUEST)
+    security_logger.info("password_reset_requested email=%s ip=%s", email, request.remote_addr or "")
 
-    # Guvenlik icin kullanici var/yok bilgisini disari vermiyoruz.
+    # Güvenlik için kullanıcı var/yok bilgisini dışarı vermiyoruz.
     public_message = "E-posta sistemde kayıtlıysa şifre sıfırlama bağlantısı gönderildi."
     with connect() as db:
         user = db.execute("SELECT id, full_name, email FROM users WHERE email = ?", (email,)).fetchone()
         if not user:
             return api_response(True, public_message, {})
 
-        token = secrets.token_urlsafe(40)
+        raw_token = secrets.token_urlsafe(40)
+        token_hash = hash_reset_token(raw_token)
         now = datetime.now()
-        expires_at = (now + timedelta(hours=1)).isoformat(timespec="seconds")
+        expires_at = (now + timedelta(minutes=30)).isoformat(timespec="seconds")
         db.execute(
             """
             INSERT INTO password_resets (token, user_id, expires_at, created_at)
             VALUES (?, ?, ?, ?)
             """,
-            (token, user["id"], expires_at, now.isoformat(timespec="seconds")),
+            (token_hash, user["id"], expires_at, now.isoformat(timespec="seconds")),
         )
         db.commit()
 
     base_url = (os.environ.get("SITE_URL") or request.host_url.rstrip("/")).rstrip("/")
-    reset_url = f"{base_url}/?reset_token={token}"
+    reset_url = f"{base_url}/?reset_token={raw_token}"
     subject = "Gümüş Veteriner şifre sıfırlama"
     body = (
         f"Merhaba {user['full_name']},\n\n"
         "Şifrenizi sıfırlamak için aşağıdaki bağlantıyı kullanabilirsiniz.\n"
         f"{reset_url}\n\n"
-        "Bu bağlantı 1 saat geçerlidir. Talebi siz oluşturmadıysanız bu maili yok sayabilirsiniz.\n\n"
+        "Bu bağlantı 30 dakika geçerlidir. Talebi siz oluşturmadıysanız bu maili yok sayabilirsiniz.\n\n"
         "Gümüş Veteriner Muayenehanesi"
     )
     mail_result = send_email(user["email"], subject, body)
@@ -1905,9 +2076,9 @@ def api_forgot_password():
 
 
 @app.route("/api/reset-password", methods=["POST"])
-@limiter.limit("8 per hour")
+@limiter.limit("5 per hour")
 def api_reset_password():
-    """Maildeki token ile kullanicinin yeni sifresini kaydeder."""
+    """Maildeki token ile kullanıcının yeni şifresini kaydeder."""
     data = request.get_json(silent=True) or {}
     token = (data.get("token") or "").strip()
     password = data.get("password") or ""
@@ -1927,7 +2098,7 @@ def api_reset_password():
             JOIN users ON users.id = password_resets.user_id
             WHERE password_resets.token = ?
             """,
-            (token,),
+            (hash_reset_token(token),),
         ).fetchone()
         if not reset or reset["used_at"] or datetime.fromisoformat(reset["expires_at"]) < now:
             return api_response(False, "Sıfırlama bağlantısı süresi dolmuş veya kullanılmış", None, HTTPStatus.BAD_REQUEST)
@@ -1937,10 +2108,11 @@ def api_reset_password():
         )
         db.execute(
             "UPDATE password_resets SET used_at = ? WHERE token = ?",
-            (now.isoformat(timespec="seconds"), token),
+            (now.isoformat(timespec="seconds"), hash_reset_token(token)),
         )
         db.execute("DELETE FROM sessions WHERE user_id = ?", (reset["user_id"],))
         db.commit()
+    security_logger.info("password_reset_completed user_id=%s ip=%s", reset["user_id"], request.remote_addr or "")
     return api_response(True, "Şifreniz güncellendi. Yeni şifrenizle giriş yapabilirsiniz.", {})
 
 
@@ -2386,6 +2558,7 @@ def api_admin_products_add():
         )
         db.commit()
         product = row_to_dict(db.execute("SELECT * FROM products WHERE id = ?", (cursor.lastrowid,)).fetchone())
+    log_admin_action("product_add", "product", product["id"], product["name"])
     return api_response(True, "Ürün eklendi", product, HTTPStatus.CREATED)
 
 
@@ -2420,6 +2593,7 @@ def api_admin_products_delete(product_id: int):
         db.commit()
     if cursor.rowcount < 1:
         return api_response(False, "Ürün bulunamadı", None, HTTPStatus.NOT_FOUND)
+    log_admin_action("product_delete", "product", product_id)
     return api_response(True, "Ürün silindi", {})
 
 
@@ -2503,6 +2677,7 @@ def api_admin_appointments_update(appointment_id: int):
         appointment = db.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
     if not appointment:
         return api_response(False, "Randevu bulunamadı", None, HTTPStatus.NOT_FOUND)
+    log_admin_action("appointment_update", "appointment", appointment_id, f"status={status}")
     return api_response(True, "Randevu güncellendi", row_to_dict(appointment))
 
 
@@ -2515,15 +2690,16 @@ def api_admin_appointments_delete(appointment_id: int):
         db.commit()
     if cursor.rowcount < 1:
         return api_response(False, "Randevu bulunamadı", None, HTTPStatus.NOT_FOUND)
+    log_admin_action("appointment_delete", "appointment", appointment_id)
     return api_response(True, "Randevu silindi", {})
 
 
 @app.route("/api/<path:_path>", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
-@limiter.limit("10 per minute", exempt_when=lambda: request.path not in {"/api/login", "/api/register"})
+@limiter.limit("5 per minute", exempt_when=lambda: request.path not in {"/api/login", "/api/register"})
 @limiter.limit("50 per hour", exempt_when=lambda: request.path not in {"/api/login", "/api/register"})
 @limiter.limit("300 per minute")
 def flask_api(_path: str) -> Response:
-    # /api/... istekleri eski handler'in GET/POST/PATCH/DELETE metodlarina yonlendirilir.
+    # /api/... istekleri eski handler'in GET/POST/PATCH/DELETE metotlarına yönlendirilir.
     if request.method == "OPTIONS":
         return Response(status=int(HTTPStatus.NO_CONTENT))
     adapter = FlaskGumusVeterinerAdapter(request.full_path.rstrip("?"))
@@ -2540,10 +2716,11 @@ def flask_api(_path: str) -> Response:
 
 @app.route("/<path:filename>")
 def serve_project_file(filename: str) -> Response | str:
-    # logo.jpeg, static dosyalar ve admin/login gibi path'ler buradan servis edilir.
+    # Kaynak kodu, .env dosyasını ve veritabanını web üzerinden yayınlama.
+    # Yalnızca açıkça izin verilen statik dosyalar servis edilir.
     target = (ROOT / filename).resolve()
-    blocked_names = {".env", "requirements.txt", "Procfile"}
-    if ROOT in target.parents and target.is_file() and target.name not in blocked_names and "data" not in target.parts:
+    allowed_file = filename == "logo.jpeg" or filename.startswith("static/")
+    if allowed_file and ROOT in target.parents and target.is_file():
         return send_from_directory(ROOT, filename)
     return render_template("index.html", asset_version=DEPLOY_VERSION, csrf_token=get_csrf_token())
 
@@ -2552,13 +2729,13 @@ def main() -> None:
     DB_PATH.parent.mkdir(exist_ok=True)
     init_db()
     server = ThreadingHTTPServer((HOST, PORT), GumusVeterinerHandler)
-    print(f"Gumus Veteriner calisiyor: http://localhost:{PORT}")
-    print("Durdurmak icin Ctrl + C")
+    print(f"Gümüş Veteriner çalışıyor: http://localhost:{PORT}")
+    print("Durdurmak için Ctrl + C")
     server.serve_forever()
 
 
 if __name__ == "__main__":
-    # Local calistirma ve Railway icin port ayari. Canli ortamda debug kapali.
+    # Local çalıştırma ve Railway için port ayarı. Canlı ortamda debug kapalı.
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
 

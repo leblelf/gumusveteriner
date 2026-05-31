@@ -1,4 +1,4 @@
-# Gumus Veteriner Klinik Yonetim Sistemi
+# Gümüş Veteriner Klinik Yönetim Sistemi
 
 Bu proje iki parcadan olusur:
 
@@ -76,9 +76,31 @@ Gerekli dosyalar:
 - `static/`
 - `services/`
 
-## Ortam Degiskenleri
+## Ortam Değişkenleri
 
-Canli ortamda hassas bilgiler koda yazilmaz. Render panelinden girilir.
+Canlı ortamda hassas bilgiler koda yazılmaz. Render panelinden girilir.
+
+Temel production ayarları:
+
+```text
+SECRET_KEY=
+JWT_SECRET=
+SITE_URL=https://wwwgumusvet.com
+CORS_ORIGIN=https://wwwgumusvet.com
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=https://wwwgumusvet.com/login/google/authorized
+```
+
+İlk admin hesabı yalnızca ilk kurulumda Environment üzerinden oluşturulur:
+
+```text
+INITIAL_ADMIN_EMAIL=gumusveterinermuayenehanesi@gmail.com
+INITIAL_ADMIN_PASSWORD=
+```
+
+İlk başarılı deploy sonrasında `INITIAL_ADMIN_PASSWORD` kaldırılabilir. Admin
+şifresi kaynak kodda tutulmaz.
 
 SMS icin:
 
@@ -100,11 +122,80 @@ SMTP_FROM=
 SMTP_USE_TLS=true
 ```
 
-JWT icin:
+PostgreSQL ve bağlantı havuzu hazırlığı için:
 
 ```text
-JWT_SECRET=
+DATABASE_URL=
+DB_POOL_SIZE=5
+DB_MAX_OVERFLOW=10
 ```
+
+Tüm örnek değerler [`.env.example`](.env.example) dosyasında bulunur. Gerçek
+`.env` dosyası GitHub'a gönderilmez.
+
+## Güvenlik Kontrol Listesi
+
+- `SECRET_KEY`, OAuth, SMTP ve SMS bilgileri Render Environment üzerinden okunur.
+- Session cookie ayarları `Secure`, `HttpOnly` ve `SameSite=Lax` olarak çalışır.
+- Login, Google OAuth, şifre sıfırlama ve admin API isteklerinde rate limit vardır.
+- CSRF token kontrolü browser üzerinden gelen veri değiştiren API isteklerinde uygulanır.
+- Güvenlik başlıkları Flask-Talisman ve ortak response katmanı tarafından eklenir.
+- Admin dışındaki kullanıcılar JWT korumalı admin endpointlerine erişemez.
+- Şifreler Werkzeug hash olarak, şifre sıfırlama tokenları SHA-256 olarak saklanır.
+- Reset bağlantıları tek kullanımlıktır ve 30 dakika içinde geçerliliğini kaybeder.
+- Upload doğrulaması yalnızca `jpg`, `jpeg`, `png`, `webp` ve `pdf` dosyalarına izin verir.
+- Kaynak kod, `.env` ve SQLite dosyası web üzerinden servis edilmez.
+- Kritik admin hareketleri `admin_audit_logs` tablosuna yazılır.
+
+## Render Production Ayarları
+
+Build Command:
+
+```text
+pip install -r requirements.txt
+```
+
+Start Command:
+
+```text
+gunicorn --workers 2 --threads 4 --bind 0.0.0.0:$PORT app:app
+```
+
+Health Check Path:
+
+```text
+/health
+```
+
+SQLite local geliştirme için çalışmaya devam eder. PostgreSQL bağlantı adresi
+`DATABASE_URL` üzerinden okunur ve SQLAlchemy connection pool altyapısı hazırdır.
+Mevcut eski SQLite handler sorgularının PostgreSQL'e tamamen taşınması ayrı bir
+migration adımıdır. Bu migration tamamlanana kadar Render persistent disk ile
+`data/gumus_veteriner.db` dosyasını kalıcı tutun.
+
+## Cloudflare Güvenlik Ayarları
+
+- SSL/TLS encryption mode: `Full`
+- Bot Fight Mode: açık
+- Security Level: `Medium`
+- WAF ile `/api/admin/*` ve login endpointlerinde ek rate limit kuralı tanımlayın.
+- Development Mode kapalı olsun.
+- Cache Rule ile `/static/*` dosyalarını uzun süre cache'leyin.
+
+## Görsel Optimizasyonu
+
+- Büyük görselleri yüklemeden önce WebP formatına çevirin.
+- Ana sayfa görsellerini mümkünse 300 KB altında tutun.
+- Liste kartlarında tam boyutlu görsel yerine thumbnail kullanın.
+- Cloudflare cache ve image optimization özelliklerini etkinleştirin.
+
+## Veritabanı Yedekleme Planı
+
+- SQLite kullanılırken Render persistent disk bağlayın ve `data/gumus_veteriner.db`
+  dosyasını günlük olarak şifreli bir yedek alana kopyalayın.
+- PostgreSQL migration sonrasında Render PostgreSQL backup özelliğini açın.
+- Haftada bir kez yedekten geri yükleme testi yapın.
+- Yedek dosyalarını GitHub'a eklemeyin.
 
 ## GitHub'a Gonderme
 

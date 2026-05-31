@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import smtplib
@@ -16,7 +16,7 @@ class EmailResult:
 
 
 def send_email(to_email: str, subject: str, body: str) -> EmailResult:
-    """SMTP ayarlari varsa kullaniciya mail gonderir."""
+    """SMTP ayarları varsa kullanıcıya mail gönderir."""
     load_local_env()
     recipient = (to_email or "").strip()
     if not recipient:
@@ -29,7 +29,7 @@ def send_email(to_email: str, subject: str, body: str) -> EmailResult:
     sender = (os.environ.get("SMTP_FROM") or username).strip()
     use_tls = (os.environ.get("SMTP_USE_TLS") or "true").strip().lower() != "false"
     if not host or not sender:
-        return EmailResult(False, "SMTP ortam degiskenleri eksik")
+        return EmailResult(False, "SMTP ortam değişkenleri eksik")
 
     message = EmailMessage()
     message["From"] = sender
@@ -44,6 +44,6 @@ def send_email(to_email: str, subject: str, body: str) -> EmailResult:
             if username and password:
                 smtp.login(username, password)
             smtp.send_message(message)
-    except Exception as exc:  # SMTP hatasini API kullanicisina traceback olarak gostermiyoruz.
-        return EmailResult(False, "Mail gonderilemedi", str(exc))
-    return EmailResult(True, "Mail gonderildi")
+    except Exception as exc:  # SMTP hatasını API kullanıcısına traceback olarak göstermiyoruz.
+        return EmailResult(False, "Mail gönderilemedi", str(exc))
+    return EmailResult(True, "Mail gönderildi")

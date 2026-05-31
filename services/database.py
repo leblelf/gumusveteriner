@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 """
-Production veritabani baglantisi hazirligi.
+Production veritabanı bağlantısı hazırlığı.
 
-Mevcut site SQLite ile calismaya devam eder. Render PostgreSQL'e geciste
-SQLAlchemy engine'i bu dosyadan alinabilir; pool ayarlari tek yerde tutulur.
+Mevcut site SQLite ile çalışmaya devam eder. Render PostgreSQL'e geçişte
+SQLAlchemy engine'i bu dosyadan alınabilir; pool ayarları tek yerde tutulur.
 """
 
 import os
@@ -23,7 +23,7 @@ def normalize_database_url(url: str) -> str:
 
 
 def create_pooled_engine() -> Engine | None:
-    """DATABASE_URL varsa connection pool kullanan PostgreSQL engine'i olusturur."""
+    """DATABASE_URL varsa connection pool kullanan PostgreSQL engine'i oluşturur."""
     database_url = (os.environ.get("DATABASE_URL") or "").strip()
     if not database_url:
         return None

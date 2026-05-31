@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import re
@@ -21,7 +21,7 @@ class SmsResult:
 
 
 def normalize_tr_phone(phone: str) -> str:
-    """05XXXXXXXXX formatini dogrular ve Netgsm icin 5XXXXXXXXX formatina cevirir."""
+    """05XXXXXXXXX formatını doğrular ve Netgsm için 5XXXXXXXXX formatına çevirir."""
     clean = re.sub(r"\s+", "", phone or "")
     if not re.fullmatch(r"05[0-9]{9}", clean):
         raise ValueError("Telefon numarası 05XXXXXXXXX formatında olmalı")
@@ -83,7 +83,7 @@ def send_sms(phone: str, message: str) -> SmsResult:
 
 
 def load_local_env() -> None:
-    """Yerel calismada .env varsa okur; Railway'de zaten ortam degiskenleri gelir."""
+    """Yerel çalışmada .env varsa okur; Railway'de zaten ortam değişkenleri gelir."""
     global _ENV_LOADED
     if _ENV_LOADED:
         return
