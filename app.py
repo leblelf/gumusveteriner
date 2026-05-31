@@ -420,6 +420,7 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS site_reviews (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
                 author TEXT NOT NULL,
                 pet_type TEXT,
                 product_name TEXT,
@@ -428,6 +429,19 @@ def init_db() -> None:
                 reply TEXT,
                 active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                reference_type TEXT,
+                reference_id INTEGER,
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
             );
             """
         )
@@ -447,6 +461,7 @@ def init_db() -> None:
         ensure_column(db, "contacts", "reply", "TEXT")
         ensure_column(db, "contacts", "replied_at", "TEXT")
         ensure_column(db, "site_reviews", "product_name", "TEXT")
+        ensure_column(db, "site_reviews", "user_id", "INTEGER")
         db.commit()
 
 
@@ -843,6 +858,36 @@ def get_request_session_user() -> sqlite3.Row | None:
             """,
             (token,),
         ).fetchone()
+
+
+def add_user_notification(
+    db: sqlite3.Connection,
+    user_id: int | None,
+    kind: str,
+    title: str,
+    message: str,
+    reference_type: str = "",
+    reference_id: int | None = None,
+) -> None:
+    """Admin işlemlerinden sonra üyeye üst menüde gösterilecek bildirim ekler."""
+    if not user_id:
+        return
+    db.execute(
+        """
+        INSERT INTO notifications
+          (user_id, kind, title, message, reference_type, reference_id, is_read, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+        """,
+        (
+            user_id,
+            kind,
+            title[:120],
+            message[:500],
+            reference_type[:40],
+            reference_id,
+            datetime.now().isoformat(timespec="seconds"),
+        ),
+    )
 
 
 def create_user_session(db: sqlite3.Connection, user: sqlite3.Row, remember: bool = False) -> str:
@@ -2221,12 +2266,18 @@ def api_reset_password():
 
 @app.route("/api/site/content", methods=["GET"])
 def api_site_content():
+    user = get_request_session_user()
     with connect() as db:
         text_rows = db.execute("SELECT text_key, label, value, updated_at FROM site_texts ORDER BY text_key").fetchall()
         review_rows = db.execute("SELECT * FROM site_reviews WHERE active = 1 ORDER BY id DESC").fetchall()
+        reviews = []
+        for row in review_rows:
+            review = row_to_dict(row)
+            review["can_delete"] = bool(user and row["user_id"] == user["id"])
+            reviews.append(review)
     data = {
         "texts": [row_to_dict(row) for row in text_rows],
-        "reviews": [row_to_dict(row) for row in review_rows],
+        "reviews": reviews,
     }
     return api_response(True, "Site içeriği listelendi", data)
 
@@ -2283,14 +2334,71 @@ def api_purchase_review():
                 return api_response(False, "Yalnızca satın aldığınız ürünlere yorum yapabilirsiniz.", None, HTTPStatus.FORBIDDEN)
         cursor = db.execute(
             """
-            INSERT INTO site_reviews (author, pet_type, product_name, rating, message, reply, active, created_at)
-            VALUES (?, ?, ?, ?, ?, '', 1, ?)
+            INSERT INTO site_reviews (user_id, author, pet_type, product_name, rating, message, reply, active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, '', 1, ?)
             """,
-            (author, pet_type, product_name, rating, message, datetime.now().isoformat(timespec="seconds")),
+            (user["id"] if user else None, author, pet_type, product_name, rating, message, datetime.now().isoformat(timespec="seconds")),
         )
         db.commit()
         row = db.execute("SELECT * FROM site_reviews WHERE id = ?", (cursor.lastrowid,)).fetchone()
     return api_response(True, "Yorumunuz yayınlandı", row_to_dict(row), HTTPStatus.CREATED)
+
+
+@app.route("/api/reviews/<int:review_id>", methods=["DELETE"])
+def api_member_review_delete(review_id: int):
+    """Üye yalnızca kendi hesabıyla oluşturduğu yorumu silebilir."""
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Yorum silmek için üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    with connect() as db:
+        cursor = db.execute(
+            "DELETE FROM site_reviews WHERE id = ? AND user_id = ?",
+            (review_id, user["id"]),
+        )
+        db.commit()
+    if cursor.rowcount < 1:
+        return api_response(False, "Yorum bulunamadı veya bu yorumu silme yetkiniz yok", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Yorumunuz silindi", {})
+
+
+@app.route("/api/notifications", methods=["GET"])
+def api_member_notifications():
+    """Giriş yapan üyeye ait son bildirimleri üst menü için döndürür."""
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Bildirimler için üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    with connect() as db:
+        rows = db.execute(
+            """
+            SELECT id, kind, title, message, reference_type, reference_id, is_read, created_at
+            FROM notifications
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 30
+            """,
+            (user["id"],),
+        ).fetchall()
+        unread_count = db.execute(
+            "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0",
+            (user["id"],),
+        ).fetchone()[0]
+    return api_response(
+        True,
+        "Bildirimler listelendi",
+        {"items": [row_to_dict(row) for row in rows], "unread_count": unread_count},
+    )
+
+
+@app.route("/api/notifications/read", methods=["PATCH", "POST"])
+def api_member_notifications_read():
+    """Üst panel açıldığında üyenin okunmamış bildirimlerini okundu olarak işaretler."""
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Bildirimler için üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    with connect() as db:
+        db.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?", (user["id"],))
+        db.commit()
+    return api_response(True, "Bildirimler okundu", {})
 
 
 @app.route("/api/profile", methods=["PATCH", "PUT"])
@@ -2484,12 +2592,40 @@ def api_admin_reviews_update(review_id: int):
         return api_response(False, "Güncellenecek alan yok", None, HTTPStatus.BAD_REQUEST)
     params.append(review_id)
     with connect() as db:
+        before = db.execute("SELECT * FROM site_reviews WHERE id = ?", (review_id,)).fetchone()
+        if not before:
+            return api_response(False, "Yorum bulunamadı", None, HTTPStatus.NOT_FOUND)
         db.execute(f"UPDATE site_reviews SET {', '.join(updates)} WHERE id = ?", params)
+        if (
+            "reply" in data
+            and (data.get("reply") or "").strip()
+            and (before["reply"] or "") != (data.get("reply") or "")
+        ):
+            add_user_notification(
+                db,
+                before["user_id"],
+                "review_reply",
+                "Yorumunuza yanıt geldi",
+                f"{before['product_name'] or 'Genel klinik'} yorumunuza Gümüş Veteriner yanıt verdi.",
+                "review",
+                review_id,
+            )
         db.commit()
         row = db.execute("SELECT * FROM site_reviews WHERE id = ?", (review_id,)).fetchone()
-    if not row:
-        return api_response(False, "Yorum bulunamadı", None, HTTPStatus.NOT_FOUND)
     return api_response(True, "Yorum güncellendi", row_to_dict(row))
+
+
+@app.route("/api/admin/reviews/delete/<int:review_id>", methods=["DELETE"])
+@require_admin_api
+def api_admin_reviews_delete(review_id: int):
+    """Admin uygulamasından seçilen yorumu kalıcı olarak siler."""
+    with connect() as db:
+        cursor = db.execute("DELETE FROM site_reviews WHERE id = ?", (review_id,))
+        db.commit()
+    if cursor.rowcount < 1:
+        return api_response(False, "Yorum bulunamadı", None, HTTPStatus.NOT_FOUND)
+    log_admin_action("review_delete", "review", review_id)
+    return api_response(True, "Yorum silindi", {})
 
 
 @app.route("/api/admin/appointment-slots", methods=["GET"])
@@ -2640,6 +2776,8 @@ def api_admin_users_delete(user_id: int):
         db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         db.execute("DELETE FROM user_addresses WHERE user_id = ?", (user_id,))
         db.execute("DELETE FROM pets WHERE user_id = ?", (user_id,))
+        db.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,))
+        db.execute("UPDATE site_reviews SET user_id = NULL WHERE user_id = ?", (user_id,))
         db.execute("UPDATE orders SET user_id = NULL WHERE user_id = ?", (user_id,))
         db.execute("DELETE FROM users WHERE id = ?", (user_id,))
         db.commit()
@@ -2669,6 +2807,23 @@ def api_admin_orders_update(order_id: int):
         if not before:
             return api_response(False, "Sipariş bulunamadı", None, HTTPStatus.NOT_FOUND)
         db.execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
+        if before["status"] != status:
+            order_message = {
+                "confirmed": "Siparişiniz onaylandı ve hazırlanıyor.",
+                "shipped": "Siparişiniz kargoya verildi.",
+                "delivered": "Siparişiniz teslim edildi.",
+                "cancelled": "Siparişiniz iptal edildi.",
+            }.get(status)
+            if order_message:
+                add_user_notification(
+                    db,
+                    order_with_items(db, order_id).get("user_id"),
+                    "order_status",
+                    "Sipariş durumunuz güncellendi",
+                    order_message,
+                    "order",
+                    order_id,
+                )
         db.commit()
         order = order_with_items(db, order_id)
     if order and status == "shipped" and before["status"] != "shipped":
@@ -2911,11 +3066,28 @@ def api_admin_appointments_update(appointment_id: int):
     if status not in {"pending", "confirmed", "cancelled", "completed"}:
         return api_response(False, "Geçersiz randevu durumu", None, HTTPStatus.BAD_REQUEST)
     with connect() as db:
+        before = db.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
+        if not before:
+            return api_response(False, "Randevu bulunamadı", None, HTTPStatus.NOT_FOUND)
         db.execute("UPDATE appointments SET status = ? WHERE id = ?", (status, appointment_id))
+        if before["status"] != status:
+            appointment_message = {
+                "confirmed": f"{before['appt_date']} {before['appt_time']} tarihli randevunuz onaylandı.",
+                "cancelled": f"{before['appt_date']} {before['appt_time']} tarihli randevunuz iptal edildi.",
+                "completed": f"{before['appt_date']} {before['appt_time']} tarihli randevunuz tamamlandı.",
+            }.get(status)
+            if appointment_message:
+                add_user_notification(
+                    db,
+                    before["user_id"],
+                    "appointment_status",
+                    "Randevu durumunuz güncellendi",
+                    appointment_message,
+                    "appointment",
+                    appointment_id,
+                )
         db.commit()
         appointment = db.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
-    if not appointment:
-        return api_response(False, "Randevu bulunamadı", None, HTTPStatus.NOT_FOUND)
     log_admin_action("appointment_update", "appointment", appointment_id, f"status={status}")
     return api_response(True, "Randevu güncellendi", row_to_dict(appointment))
 

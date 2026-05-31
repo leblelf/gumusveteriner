@@ -2898,6 +2898,31 @@ class _ReviewReplyPageState extends State<ReviewReplyPage> {
     );
   }
 
+  Future<void> deleteReview(Map<String, dynamic> review) async {
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Yorum silinsin mi?'),
+        content: Text(
+            '${review['author']} tarafından yazılan yorum kalıcı olarak silinecek.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Vazgeç')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Sil')),
+        ],
+      ),
+    );
+    if (approved != true) return;
+    await widget.api.request(
+      '${AppConstants.reviewsDeleteEndpoint}/${review['id']}',
+      method: 'DELETE',
+    );
+    reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -2995,13 +3020,21 @@ class _ReviewReplyPageState extends State<ReviewReplyPage> {
                                   'Gümüş Veteriner yanıtı: ${item['reply']}'),
                             ),
                           const SizedBox(height: 10),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: FilledButton.icon(
-                              onPressed: () => replyTo(item),
-                              icon: const Icon(Icons.reply),
-                              label: const Text('Yanıtla'),
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () => deleteReview(item),
+                                icon: const Icon(Icons.delete_outline),
+                                label: const Text('Sil'),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton.icon(
+                                onPressed: () => replyTo(item),
+                                icon: const Icon(Icons.reply),
+                                label: const Text('Yanıtla'),
+                              ),
+                            ],
                           ),
                         ],
                       ),

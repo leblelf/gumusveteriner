@@ -304,6 +304,22 @@ textarea{resize:vertical;min-height:80px}
 .google-login-btn:hover{border-color:var(--teal);box-shadow:var(--shadow)}
 .nav-user{display:none;color:var(--teal);font-size:13px;font-weight:500;background:transparent;border:0;font-family:'Outfit',sans-serif;cursor:pointer;padding:6px 10px;border-radius:20px}
 .nav-user:hover{background:var(--teal-light)}
+.notification-wrap{display:none;position:relative}
+body.user-session .notification-wrap{display:block}
+.notification-btn{position:relative;width:36px;height:36px;border:1px solid var(--border2);border-radius:50%;background:var(--card);cursor:pointer}
+.notification-badge{position:absolute;right:-6px;top:-6px;display:none;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;border-radius:12px;background:var(--red);color:#fff;font-size:10px;font-weight:700}
+.notification-panel{display:none;position:absolute;right:0;top:44px;width:min(360px,88vw);max-height:420px;overflow:auto;border:1px solid var(--border2);border-radius:12px;background:var(--card);box-shadow:var(--shadow);z-index:930}
+.notification-wrap:hover .notification-panel,.notification-panel.open{display:block}
+.notification-head{display:flex;justify-content:space-between;gap:.5rem;align-items:center;padding:.8rem;border-bottom:1px solid var(--border2);font-size:13px}
+.notification-head button{border:0;background:transparent;color:var(--teal);font-size:11px;cursor:pointer}
+.notification-item{padding:.8rem;border-bottom:1px solid var(--border2)}
+.notification-item.unread{background:var(--teal-pale)}
+.notification-item strong{display:block;color:var(--text);font-size:13px}
+.notification-item p{margin:.25rem 0;color:var(--muted);font-size:12px;line-height:1.45}
+.notification-item small,.notification-empty{color:var(--muted);font-size:11px}
+.notification-empty{padding:1rem;text-align:center}
+.review-delete{display:block;margin-top:.8rem;border:1px solid var(--red);border-radius:7px;background:transparent;color:var(--red);padding:5px 9px;font-family:'Outfit',sans-serif;font-size:12px;cursor:pointer}
+.review-delete:hover{background:var(--red-l)}
 .admin-only{display:none}
 body.admin-session .admin-only{display:inline-flex}
 .profile-only{display:none!important}
@@ -366,6 +382,9 @@ body.user-session .guest-order,body.admin-session .guest-order{display:none}
   .cart-nav-btn .cart-label{display:none}
   .cart-nav-btn .cart-badge{position:absolute;right:-5px;top:-5px;margin:0}
   .theme-toggle{display:grid;place-items:center;position:fixed;right:3.75rem;top:.75rem;z-index:910;width:42px;height:42px;min-width:42px;border-radius:14px;background:var(--card);box-shadow:var(--shadow)}
+  .notification-wrap{position:fixed;right:6.75rem;top:.75rem;z-index:920}
+  .notification-btn{width:42px;height:42px;border-radius:14px;box-shadow:var(--shadow)}
+  .notification-panel{position:fixed;right:.75rem;top:4rem;width:min(360px,calc(100vw - 1.5rem))}
   nav.mobile-open{position:fixed;left:0;top:0;bottom:0;width:min(84vw,320px);height:100vh;z-index:850;align-items:stretch;align-content:flex-start;flex-direction:column;flex-wrap:nowrap;padding:1rem;box-shadow:22px 0 70px rgba(0,0,0,.22);overflow-y:auto}
   nav.mobile-open .nb{display:flex;width:100%;justify-content:flex-start;border-radius:12px;padding:12px 14px;background:transparent}
   nav.mobile-open .mobile-menu-btn{position:static;width:100%;height:auto;padding:12px 14px;background:var(--teal);color:#fff;justify-content:center}

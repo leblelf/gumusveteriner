@@ -55,6 +55,15 @@
   <!-- Kullanici giris yapinca ayri profil butonu yerine isim butonu profile gider. -->
   <button class="nav-user" id="nav-user" type="button" onclick="go('profile')"></button>
   <button class="nb" id="logoutBtn" style="display:none" onclick="logout()">Çıkış</button>
+  <div class="notification-wrap" id="notificationWrap">
+    <button class="notification-btn" type="button" onclick="toggleNotifications()" aria-label="Bildirimleri aç veya kapat">
+      🔔 <span class="notification-badge" id="notificationCount">0</span>
+    </button>
+    <div class="notification-panel" id="notificationPanel">
+      <div class="notification-head"><strong>Bildirimler</strong><button type="button" onclick="markNotificationsRead()">Okundu işaretle</button></div>
+      <div class="notification-list" id="notificationList"><div class="notification-empty">Henüz bildiriminiz yok.</div></div>
+    </div>
+  </div>
   <button class="theme-toggle" type="button" onclick="toggleTheme()" title="Tema değiştir">◐</button>
   <button class="nb cart-nav-btn" onclick="openCart()" aria-label="Sepeti aç">🛒 <span class="cart-label">Sepet</span> <span class="cart-badge" id="cart-count">0</span></button>
 </nav>

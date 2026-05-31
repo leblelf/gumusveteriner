@@ -23,6 +23,7 @@ let adminToken = localStorage.getItem('gvAdminToken') || sessionStorage.getItem(
 let PROFILE = {addresses:[], pets:[]};
 let PENDING_ORDER = null;
 let SITE_REVIEWS = [];
+let NOTIFICATIONS = [];
 document.documentElement.dataset.theme=localStorage.getItem('gvTheme') || 'light';
 
 window.addEventListener('load',()=>setTimeout(()=>document.getElementById('loader').classList.add('done'),650));
@@ -129,7 +130,7 @@ async function restoreServerSession(){
 async function loadSiteContent(){
   // Admin uygulamasından düzenlenen site yazılarını API'den çeker.
   try{
-    const res=await fetch('/api/site/content');
+    const res=await fetch('/api/site/content',{headers:authHeaders()});
     const payload=await res.json();
     if(!res.ok || payload.success!==true)return;
     const texts={};
@@ -200,7 +201,8 @@ function renderSiteReviews(reviews){
     const stars='★'.repeat(rating)+'☆'.repeat(5-rating);
     const product=item.product_name && item.product_name!=='Genel' ? `<div class="tag" style="margin-bottom:.55rem">${item.product_name}</div>` : '';
     const reply=item.reply ? `<div class="info-box" style="margin-top:.8rem;padding:.75rem;font-size:13px"><strong>Gümüş Veteriner:</strong> ${item.reply}</div>` : '';
-    return `<div class="rc"><div class="stars">${stars}</div>${product}<blockquote>"${item.message}"</blockquote>${reply}<cite>${item.author} — ${item.pet_type || 'Hasta Sahibi'}</cite></div>`;
+    const remove=item.can_delete ? `<button class="review-delete" type="button" onclick="deleteOwnReview(${item.id})">Yorumumu Sil</button>` : '';
+    return `<div class="rc"><div class="stars">${stars}</div>${product}<blockquote>"${item.message}"</blockquote>${reply}<cite>${item.author} — ${item.pet_type || 'Hasta Sahibi'}</cite>${remove}</div>`;
   }).join('');
 }
 function renderAllSiteReviews(reviews){
@@ -212,8 +214,70 @@ function renderAllSiteReviews(reviews){
     const stars='★'.repeat(rating)+'☆'.repeat(5-rating);
     const product=item.product_name ? `<div class="tag" style="margin-bottom:.55rem">${item.product_name}</div>` : '<div class="tag" style="margin-bottom:.55rem">Genel</div>';
     const reply=item.reply ? `<div class="info-box" style="margin-top:.8rem;padding:.75rem;font-size:13px"><strong>Gümüş Veteriner:</strong> ${item.reply}</div>` : '';
-    return `<div class="rc"><div class="stars">${stars}</div>${product}<blockquote>"${item.message}"</blockquote>${reply}<cite>${item.author} — ${item.pet_type || 'Hasta Sahibi'}</cite></div>`;
+    const remove=item.can_delete ? `<button class="review-delete" type="button" onclick="deleteOwnReview(${item.id})">Yorumumu Sil</button>` : '';
+    return `<div class="rc"><div class="stars">${stars}</div>${product}<blockquote>"${item.message}"</blockquote>${reply}<cite>${item.author} — ${item.pet_type || 'Hasta Sahibi'}</cite>${remove}</div>`;
   }).join('');
+}
+
+async function deleteOwnReview(id){
+  // Üyenin kendi hesabıyla yazdığı yorumu kaldırır.
+  if(!userToken){toast('Yorum silmek için giriş yapın.','err');return;}
+  if(!confirm('Yorumunuzu silmek istediğinize emin misiniz?'))return;
+  try{
+    const res=await fetch(`/api/reviews/${id}`,{method:'DELETE',headers:authHeaders()});
+    const payload=await res.json();
+    if(!res.ok)throw new Error(payload.message || payload.error || 'Yorum silinemedi.');
+    toast('Yorumunuz silindi.','ok');
+    await loadSiteContent();
+  }catch(e){toast(e.message || 'Yorum silinemedi.','err');}
+}
+
+async function loadNotifications(){
+  // Randevu, sipariş ve yorum yanıtlarını üyeye üst panelde gösterir.
+  if(!userToken){NOTIFICATIONS=[];renderNotifications();return;}
+  try{
+    const res=await fetch('/api/notifications',{headers:authHeaders()});
+    const payload=await res.json();
+    if(!res.ok)return;
+    NOTIFICATIONS=payload.data.items || [];
+    renderNotifications(payload.data.unread_count || 0);
+  }catch(e){console.warn('Bildirimler yüklenemedi:',e);}
+}
+
+function renderNotifications(unreadCount=0){
+  const wrap=document.getElementById('notificationWrap');
+  const badge=document.getElementById('notificationCount');
+  const list=document.getElementById('notificationList');
+  if(wrap)wrap.style.display=userToken?'block':'none';
+  if(badge){
+    badge.textContent=unreadCount;
+    badge.style.display=unreadCount>0?'inline-flex':'none';
+  }
+  if(!list)return;
+  if(!NOTIFICATIONS.length){
+    list.innerHTML='<div class="notification-empty">Henüz bildiriminiz yok.</div>';
+    return;
+  }
+  list.innerHTML=NOTIFICATIONS.map(item=>`
+    <div class="notification-item ${item.is_read ? '' : 'unread'}">
+      <strong>${item.title}</strong>
+      <p>${item.message}</p>
+      <small>${item.created_at.replace('T',' ')}</small>
+    </div>`).join('');
+}
+
+function toggleNotifications(){
+  document.getElementById('notificationPanel')?.classList.toggle('open');
+  loadNotifications();
+}
+
+async function markNotificationsRead(){
+  if(!userToken)return;
+  try{
+    await fetch('/api/notifications/read',{method:'PATCH',headers:authHeaders()});
+    NOTIFICATIONS=NOTIFICATIONS.map(item=>({...item,is_read:1}));
+    renderNotifications(0);
+  }catch(e){console.warn('Bildirimler güncellenemedi:',e);}
 }
 let cart = {};  // {id: {product, qty}}
 
@@ -683,6 +747,7 @@ function updateAuthUI(){
     if(logoutBtn)logoutBtn.style.display='none';
     if(reviewBtn)reviewBtn.style.display='none';
   }
+  renderNotifications();
 }
 
 function clearStoredUserSession(){
@@ -691,6 +756,7 @@ function clearStoredUserSession(){
   userToken='';
   currentUser=null;
   PROFILE={user:null,addresses:[],pets:[],appointments:[]};
+  NOTIFICATIONS=[];
   localStorage.removeItem('gvUserToken');
   localStorage.removeItem('gvUser');
   sessionStorage.removeItem('gvUserToken');
@@ -711,6 +777,7 @@ async function logout(){
   adminToken='';
   currentUser=null;
   PROFILE={user:null,addresses:[],pets:[]};
+  NOTIFICATIONS=[];
   localStorage.removeItem('gvUserToken');
   localStorage.removeItem('gvAdminToken');
   localStorage.removeItem('gvUser');
@@ -1268,11 +1335,15 @@ async function bootSite(){
   applyAppointmentMemberMode();
   loadProducts();
   loadSiteContent();
-  if(currentUser){loadProfile().catch(()=>{});}
+  if(currentUser){
+    loadProfile().catch(()=>{});
+    loadNotifications();
+  }
   if(location.pathname==='/admin/login' || location.pathname==='/admin')go('home');
   if(location.pathname==='/403')go('forbidden');
   if(new URLSearchParams(location.search).get('route')==='adminLogin')go('home');
 }
 
 bootSite();
+setInterval(()=>{if(userToken)loadNotifications();},30000);
 
