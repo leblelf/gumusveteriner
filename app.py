@@ -282,6 +282,27 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TRIGGER IF NOT EXISTS prevent_duplicate_user_email_insert
+            BEFORE INSERT ON users
+            WHEN EXISTS (
+                SELECT 1 FROM users
+                WHERE LOWER(email) = LOWER(NEW.email)
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'DUPLICATE_USER_EMAIL');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS prevent_duplicate_user_email_update
+            BEFORE UPDATE OF email ON users
+            WHEN EXISTS (
+                SELECT 1 FROM users
+                WHERE id <> NEW.id
+                  AND LOWER(email) = LOWER(NEW.email)
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'DUPLICATE_USER_EMAIL');
+            END;
+
             CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
                 user_id INTEGER NOT NULL,
@@ -849,7 +870,7 @@ class UserModel:
     @staticmethod
     def find_by_google_or_email(db: sqlite3.Connection, google_id: str, email: str) -> sqlite3.Row | None:
         return db.execute(
-            "SELECT * FROM users WHERE google_id = ? OR email = ? ORDER BY google_id = ? DESC LIMIT 1",
+            "SELECT * FROM users WHERE google_id = ? OR LOWER(email) = LOWER(?) ORDER BY google_id = ? DESC LIMIT 1",
             (google_id, email, google_id),
         ).fetchone()
 
@@ -1677,6 +1698,13 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
 
         try:
             with connect() as db:
+                existing = db.execute(
+                    "SELECT id FROM users WHERE LOWER(email) = LOWER(?)",
+                    (email,),
+                ).fetchone()
+                if existing:
+                    self.send_json({"error": "Bu email ile kayıtlı bir üye zaten var"}, HTTPStatus.CONFLICT)
+                    return
                 cursor = db.execute(
                     """
                     INSERT INTO users (full_name, email, phone, password_hash, password_salt, created_at)
