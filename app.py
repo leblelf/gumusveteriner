@@ -55,9 +55,10 @@ from services.sms_service import load_local_env, send_sms, validate_sms_message,
 # Dosya yolları, deploy bilgileri ve uygulama genel sabitleri burada durur.
 # Render/Railway gibi servisler PORT değerini ortam değişkeni olarak verir.
 ROOT = Path(__file__).resolve().parent
+DEFAULT_DB_PATH = (ROOT / "data" / "gumus_veteriner.db").resolve()
 DB_PATH = Path(
     os.environ.get("SQLITE_DB_PATH")
-    or ROOT / "data" / "gumus_veteriner.db"
+    or DEFAULT_DB_PATH
 ).resolve()
 HOST = "0.0.0.0"
 load_local_env()
@@ -157,9 +158,26 @@ _DB_INIT_LOCK = threading.Lock()
 _DB_INITIALIZED = False
 
 
+def ensure_database_directory() -> None:
+    """SQLite klasörü yazılamıyorsa deploy'u ayakta tutmak için local klasöre döner."""
+    global DB_PATH
+    try:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        if DB_PATH == DEFAULT_DB_PATH:
+            raise
+        security_logger.exception(
+            "sqlite_persistent_path_unavailable fallback=%s requested=%s",
+            DEFAULT_DB_PATH,
+            DB_PATH,
+        )
+        DB_PATH = DEFAULT_DB_PATH
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
 def connect() -> sqlite3.Connection:
     """Local SQLite veritabanına bağlanır ve satırları sözlük gibi okunabilir yapar."""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ensure_database_directory()
     db = sqlite3.connect(DB_PATH, timeout=15)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
@@ -440,7 +458,7 @@ def ensure_database_initialized() -> None:
     with _DB_INIT_LOCK:
         if _DB_INITIALIZED:
             return
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        ensure_database_directory()
         try:
             init_db()
         except Exception:
@@ -2947,7 +2965,7 @@ def serve_project_file(filename: str) -> Response | str:
 
 
 def main() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ensure_database_directory()
     init_db()
     server = ThreadingHTTPServer((HOST, PORT), GumusVeterinerHandler)
     print(f"Gümüş Veteriner çalışıyor: http://localhost:{PORT}")
