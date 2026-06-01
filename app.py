@@ -2027,12 +2027,27 @@ def handle_unexpected_error(error):
 
 
 @app.route("/")
+@app.route("/hizmetler")
+@app.route("/urunler")
+@app.route("/iletisim")
 @app.route("/admin")
 @app.route("/admin/login")
 @app.route("/403")
 def serve_app_index() -> str:
     # Tüm tek sayfa uygulama route'ları aynı index.html dosyasını kullanır.
     return render_template("index.html", asset_version=DEPLOY_VERSION, csrf_token=get_csrf_token())
+
+
+@app.route("/ürünler")
+def redirect_legacy_products_url():
+    """Türkçe karakterli eski ürün URL'sini arama motorları için kalıcı yönlendirir."""
+    return redirect("/urunler", code=HTTPStatus.MOVED_PERMANENTLY)
+
+
+@app.route("/iletişim")
+def redirect_legacy_contact_url():
+    """Türkçe karakterli eski iletişim URL'sini arama motorları için kalıcı yönlendirir."""
+    return redirect("/iletisim", code=HTTPStatus.MOVED_PERMANENTLY)
 
 
 @app.route("/login")
@@ -2114,8 +2129,8 @@ def sitemap_xml() -> Response:
     urls = [
         (SITE_URL, "1.0", "weekly"),
         (f"{SITE_URL}/hizmetler", "0.8", "weekly"),
-        (f"{SITE_URL}/ürünler", "0.8", "weekly"),
-        (f"{SITE_URL}/iletişim", "0.7", "monthly"),
+        (f"{SITE_URL}/urunler", "0.8", "weekly"),
+        (f"{SITE_URL}/iletisim", "0.7", "monthly"),
     ]
     url_nodes = "\n".join(
         f"""  <url>

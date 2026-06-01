@@ -1360,6 +1360,9 @@ async function bootSite(){
     loadProfile().catch(()=>{});
     loadNotifications();
   }
+  const seoRoutes={hizmetler:'services',urunler:'shop',iletisim:'contact'};
+  const seoPage=seoRoutes[location.pathname.replace(/^\/|\/$/g,'')];
+  if(seoPage)go(seoPage);
   if(location.pathname==='/admin/login' || location.pathname==='/admin')go('home');
   if(location.pathname==='/403')go('forbidden');
   if(new URLSearchParams(location.search).get('route')==='adminLogin')go('home');
