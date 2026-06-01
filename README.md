@@ -120,7 +120,16 @@ SMTP_USERNAME=
 SMTP_PASSWORD=
 SMTP_FROM=
 SMTP_USE_TLS=true
+DEBUG_MAIL_TEST=false
+SMTP_TEST_RECIPIENT=
 ```
+
+Gmail kullanırken `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587` ve
+`SMTP_USE_TLS=true` değerlerini kullanın. `SMTP_PASSWORD` alanına Google
+hesabınızdan oluşturduğunuz uygulama şifresini yazın. Normal Gmail parolası
+çalışmaz. SMTP test endpointi gerektiğinde kısa süreli olarak
+`DEBUG_MAIL_TEST=true` ile açılabilir; test bittikten sonra tekrar `false`
+yapılmalıdır.
 
 PostgreSQL ve bağlantı havuzu hazırlığı için:
 

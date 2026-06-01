@@ -44,7 +44,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
-from services.email_service import EmailResult, send_email
+from services.email_service import EmailResult, env_flag, send_email
 from services.database import normalize_database_url
 from services.sms_service import load_local_env, send_sms, validate_sms_message, normalize_tr_phone
 
@@ -2281,8 +2281,57 @@ def api_forgot_password():
     )
     mail_result = send_email(user["email"], subject, body)
     if not mail_result.success:
-        return api_response(False, "Şifre sıfırlama maili gönderilemedi", {"detail": mail_result.message}, HTTPStatus.BAD_GATEWAY)
+        security_logger.error(
+            "password_reset_mail_failed user_id=%s email=%s detail=%s",
+            user["id"],
+            user["email"],
+            mail_result.detail or mail_result.message,
+        )
+        # Gönderilmeyen linkin veritabanında geçerli kalmasına izin vermiyoruz.
+        with connect() as db:
+            db.execute("DELETE FROM password_resets WHERE token = ?", (token_hash,))
+            db.commit()
+        return api_response(True, public_message, {})
     return api_response(True, public_message, {})
+
+
+@app.route("/api/test-mail", methods=["POST"])
+@limiter.limit("5 per hour")
+def api_test_mail():
+    """SMTP ayarlarını yalnızca admin veya açık test modu ile doğrular."""
+    debug_mail_test = env_flag("DEBUG_MAIL_TEST", default=False)
+    if not debug_mail_test:
+        auth = request.headers.get("Authorization", "")
+        token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+        if not decode_admin_jwt(token):
+            return api_response(False, "Admin yetkisi gerekli", None, HTTPStatus.UNAUTHORIZED)
+
+    data = request.get_json(silent=True) or {}
+    recipient = (
+        data.get("email")
+        or os.environ.get("SMTP_TEST_RECIPIENT")
+        or os.environ.get("SMTP_USERNAME")
+        or ""
+    )
+    try:
+        recipient = validate_email(recipient)
+    except ValueError:
+        return api_response(False, "Test alıcısı için geçerli bir e-posta girin", None, HTTPStatus.BAD_REQUEST)
+
+    mail_result = send_email(
+        recipient,
+        "Gümüş Veteriner SMTP test maili",
+        "Bu mesaj Gümüş Veteriner mail ayarlarının çalıştığını doğrulamak için gönderildi.",
+    )
+    if not mail_result.success:
+        security_logger.error(
+            "smtp_test_mail_failed email=%s detail=%s",
+            recipient,
+            mail_result.detail or mail_result.message,
+        )
+        return api_response(False, "Test maili gönderilemedi. Render loglarını kontrol edin.", None, HTTPStatus.BAD_GATEWAY)
+    security_logger.info("smtp_test_mail_sent email=%s", recipient)
+    return api_response(True, "Test maili gönderildi", {"email": recipient})
 
 
 @app.route("/api/reset-password", methods=["POST"])
