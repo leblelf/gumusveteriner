@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 """
-Local SQLite verilerini Render PostgreSQL veritabanına bir kez taşır.
+Yerel SQLite verilerini Render PostgreSQL veritabanına bir kez taşır.
+
+Render web servisi Internal Database URL kullanır. Bu betik bilgisayarda
+çalıştırıldığı için Render External Database URL değerine ihtiyaç duyar.
 
 Kullanım:
-    $env:DATABASE_URL="postgresql://..."
+    .env dosyasına MIGRATION_DATABASE_URL=postgresql://... ekleyin.
     python scripts/migrate_sqlite_to_postgres.py
 """
 
@@ -15,15 +18,21 @@ from pathlib import Path
 
 import psycopg2
 from psycopg2 import sql
+from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+load_dotenv(ROOT / ".env")
 
 from services.postgres_adapter import POSTGRES_SCHEMA, _postgres_url  # noqa: E402
 
 
 SQLITE_PATH = Path(os.environ.get("SQLITE_SOURCE_PATH") or ROOT / "data" / "gumus_veteriner.db")
-DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
+DATABASE_URL = (
+    os.environ.get("MIGRATION_DATABASE_URL")
+    or os.environ.get("DATABASE_URL")
+    or ""
+).strip()
 
 # Foreign key bağımlılıkları nedeniyle tablolar bu sırayla aktarılır.
 TABLES = [
@@ -96,7 +105,7 @@ def migrate_table(sqlite_db: sqlite3.Connection, postgres_db, table: str) -> int
 
 def main() -> None:
     if not DATABASE_URL:
-        raise SystemExit("DATABASE_URL tanımlı değil.")
+        raise SystemExit("MIGRATION_DATABASE_URL veya DATABASE_URL tanımlı değil.")
     if not SQLITE_PATH.exists():
         raise SystemExit(f"SQLite dosyası bulunamadı: {SQLITE_PATH}")
 
@@ -117,4 +126,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

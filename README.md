@@ -182,10 +182,22 @@ kullanın:
 
 Local SQLite verilerini PostgreSQL'e bir defalık aktarmak için:
 
+Yerel SQLite kayıtlarını production PostgreSQL veritabanına bir kez taşımak
+için Render PostgreSQL sayfasındaki `External Database URL` değerini yalnızca
+bilgisayarınızdaki `.env` dosyasına ekleyin. `.env` Git tarafından yok sayılır:
+
+```text
+MIGRATION_DATABASE_URL=Render External Database URL
+```
+
+Ardından proje dizininde çalıştırın:
+
 ```powershell
-$env:DATABASE_URL="Render Internal Database URL"
 python scripts/migrate_sqlite_to_postgres.py
 ```
+
+Web servisinin Render Environment alanındaki `DATABASE_URL` değeri ise
+`Internal Database URL` olarak kalmalıdır.
 
 Taşıma komutu kullanıcılar, adminler, ürünler, randevular ve diğer ilişkili
 tabloları ID değerlerini koruyarak PostgreSQL'e aktarır. Canlı veritabanını
