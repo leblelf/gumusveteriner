@@ -1806,18 +1806,35 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                         datetime.now().isoformat(timespec="seconds"),
                     ),
                 )
-                db.commit()
                 user = db.execute(
-                    "SELECT id, full_name, email, phone, role, created_at FROM users WHERE id = ?",
+                    "SELECT * FROM users WHERE id = ?",
                     (cursor.lastrowid,),
                 ).fetchone()
+                token = create_user_session(db, user, remember=True)
+                db.commit()
         except Exception as exc:
             if "unique" not in str(exc).lower() and "duplicate" not in str(exc).lower():
                 raise
             self.send_json({"error": "Bu email veya telefon ile kayıtlı bir üye zaten var"}, HTTPStatus.CONFLICT)
             return
 
-        self.send_json(row_to_dict(user), HTTPStatus.CREATED)
+        self.send_json(
+            {
+                "token": token,
+                "user": {
+                    "id": user["id"],
+                    "full_name": user["full_name"],
+                    "name": user["name"] if "name" in user.keys() else user["full_name"],
+                    "email": user["email"],
+                    "phone": user["phone"],
+                    "profile_picture": user["profile_picture"] if "profile_picture" in user.keys() else "",
+                    "role": user["role"],
+                    "is_banned": user["is_banned"],
+                    "created_at": user["created_at"],
+                },
+            },
+            HTTPStatus.CREATED,
+        )
 
     def login_user(self, required_role: str) -> None:
         """Normal üye veya admin girişini kontrol eder ve session token üretir."""
@@ -2236,63 +2253,6 @@ def api_logout():
             db.commit()
     session.clear()
     return api_response(True, "Çıkış yapıldı", {})
-
-
-@app.route("/api/forgot-password", methods=["POST"])
-@limiter.limit("3 per hour")
-def api_forgot_password():
-    """Üye şifresi unutuldugünda tek kullanımlık şifre sıfırlama linki yollar."""
-    data = request.get_json(silent=True) or {}
-    try:
-        email = validate_email(data.get("email", ""))
-    except ValueError:
-        return api_response(False, "Geçerli bir e-posta girin", None, HTTPStatus.BAD_REQUEST)
-    security_logger.info("password_reset_requested email=%s ip=%s", email, request.remote_addr or "")
-
-    # Güvenlik için kullanıcı var/yok bilgisini dışarı vermiyoruz.
-    public_message = "E-posta sistemde kayıtlıysa şifre sıfırlama bağlantısı gönderildi."
-    with connect() as db:
-        user = db.execute("SELECT id, full_name, email FROM users WHERE email = ?", (email,)).fetchone()
-        if not user:
-            return api_response(True, public_message, {})
-
-        raw_token = secrets.token_urlsafe(40)
-        token_hash = hash_reset_token(raw_token)
-        now = datetime.now()
-        expires_at = (now + timedelta(minutes=30)).isoformat(timespec="seconds")
-        db.execute(
-            """
-            INSERT INTO password_resets (token, user_id, expires_at, created_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (token_hash, user["id"], expires_at, now.isoformat(timespec="seconds")),
-        )
-        db.commit()
-
-    base_url = (os.environ.get("SITE_URL") or request.host_url.rstrip("/")).rstrip("/")
-    reset_url = f"{base_url}/?reset_token={raw_token}"
-    subject = "Gümüş Veteriner şifre sıfırlama"
-    body = (
-        f"Merhaba {user['full_name']},\n\n"
-        "Şifrenizi sıfırlamak için aşağıdaki bağlantıyı kullanabilirsiniz.\n"
-        f"{reset_url}\n\n"
-        "Bu bağlantı 30 dakika geçerlidir. Talebi siz oluşturmadıysanız bu maili yok sayabilirsiniz.\n\n"
-        "Gümüş Veteriner Muayenehanesi"
-    )
-    mail_result = send_email(user["email"], subject, body)
-    if not mail_result.success:
-        security_logger.error(
-            "password_reset_mail_failed user_id=%s email=%s detail=%s",
-            user["id"],
-            user["email"],
-            mail_result.detail or mail_result.message,
-        )
-        # Gönderilmeyen linkin veritabanında geçerli kalmasına izin vermiyoruz.
-        with connect() as db:
-            db.execute("DELETE FROM password_resets WHERE token = ?", (token_hash,))
-            db.commit()
-        return api_response(True, public_message, {})
-    return api_response(True, public_message, {})
 
 
 @app.route("/api/test-mail", methods=["POST"])

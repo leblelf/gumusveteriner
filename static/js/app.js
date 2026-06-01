@@ -815,28 +815,6 @@ function googleLogin(){
   window.location.href=`/login/google?remember=${remember ? '1' : '0'}`;
 }
 
-async function forgotPassword(){
-  // Kullanıcı mail adresini girince backend tek kullanımlık şifre sıfırlama linki yollar.
-  const emailInput=document.getElementById('lemail');
-  const email=(emailInput?.value || prompt('Şifre sıfırlama linki için e-posta adresinizi yazın:') || '').trim();
-  if(!email || !email.includes('@')){
-    showMsg('loginOk','loginErr','err','Şifre sıfırlama için geçerli bir e-posta girin.');
-    return;
-  }
-  try{
-    const res=await fetch('/api/forgot-password',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email})
-    });
-    const payload=await res.json();
-    if(!res.ok || payload.success===false)throw new Error(payload.message || 'Şifre sıfırlama maili gönderilemedi.');
-    showMsg('loginOk','loginErr','ok',payload.message || 'Şifre sıfırlama bağlantısı gönderildi.');
-  }catch(e){
-    showMsg('loginOk','loginErr','err',e.message || 'Şifre sıfırlama maili gönderilemedi.');
-  }
-}
-
 async function handlePasswordResetFromLink(){
   // Maildeki bağlantı siteyi reset_token parametresiyle açar; yeni şifreyi burada alırız.
   const params=new URLSearchParams(location.search);
@@ -1283,11 +1261,21 @@ async function submitRegister(){
     });
     const data=await res.json();
     if(!res.ok){throw new Error(data.error || 'Üye kaydı oluşturulamadı.');}
-    const avatar=localStorage.getItem('gvPendingAvatar') || '';
-    if(avatar){localStorage.setItem(`gvAvatar:${data.email}`,avatar);localStorage.removeItem('gvPendingAvatar');}
-    showMsg('registerOk','registerErr','ok',`✅ Üyelik oluşturuldu. Üye numarası: #${data.id}`);
+    userToken=data.token;
+    currentUser=data.user;
+    let avatar='';
+    try{
+      avatar=localStorage.getItem('gvPendingAvatar') || '';
+      if(avatar){localStorage.setItem(`gvAvatar:${currentUser.email}`,avatar);localStorage.removeItem('gvPendingAvatar');}
+    }catch(error){}
+    currentUser.avatar=avatar;
+    saveUserSession(userToken,currentUser,true);
+    showMsg('registerOk','registerErr','ok',`✅ Üyeliğiniz oluşturuldu. Hoş geldiniz ${currentUser.full_name}.`);
     reactPet('happy');
+    updateAuthUI();
     document.getElementById('registerForm').reset();
+    await loadProfile().catch(()=>{});
+    go('profile');
   }catch(e){
     reactPet('sad');
     showMsg('registerOk','registerErr','err',e.message || 'Üye kaydı oluşturulamadı.');

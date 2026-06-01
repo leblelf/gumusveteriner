@@ -111,28 +111,10 @@ NETGSM_PASSWORD=
 NETGSM_HEADER=
 ```
 
-Render Free üzerinde işlem mailleri için Brevo HTTP API kullanın:
+Google App Password ile Gmail SMTP kullanmak için:
 
 ```text
-MAIL_PROVIDER=brevo
-BREVO_API_KEY=
-BREVO_SENDER_EMAIL=
-BREVO_SENDER_NAME=Gümüş Veteriner
-BREVO_REPLY_TO=
-DEBUG_MAIL_TEST=false
-SMTP_TEST_RECIPIENT=
-```
-
-`BREVO_API_KEY` değerini Brevo Transactional API anahtarından alın.
-`BREVO_SENDER_EMAIL` adresini Brevo panelinde gönderici olarak doğrulayın.
-Render Free planında SMTP portları kapalı olduğu için HTTPS tabanlı Brevo API
-önerilir.
-
-Ücretli sunucu veya yerel geliştirmede SMTP fallback kullanmak isterseniz:
-
-```text
-MAIL_PROVIDER=smtp
-SMTP_HOST=
+SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USERNAME=
 SMTP_PASSWORD=
@@ -147,7 +129,9 @@ Gmail kullanırken `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587` ve
 hesabınızdan oluşturduğunuz uygulama şifresini yazın. Normal Gmail parolası
 çalışmaz. SMTP test endpointi gerektiğinde kısa süreli olarak
 `DEBUG_MAIL_TEST=true` ile açılabilir; test bittikten sonra tekrar `false`
-yapılmalıdır.
+yapılmalıdır. Render Free planda SMTP portları engellendiği için mail gönderimi
+ücretli instance veya SMTP bağlantısına izin veren farklı bir hosting üzerinde
+çalışır.
 
 PostgreSQL ve bağlantı havuzu hazırlığı için:
 
