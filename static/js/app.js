@@ -93,11 +93,19 @@ function saveUserSession(token,user,remember){
   // Beni hatırla seçiliyse oturum tarayıcı kapanıp açılsa da kalır.
   const persistent=remember ? localStorage : sessionStorage;
   const temporary=remember ? sessionStorage : localStorage;
-  temporary.removeItem('gvUserToken');
-  temporary.removeItem('gvUser');
-  persistent.setItem('gvUserToken',token);
-  persistent.setItem('gvUser',JSON.stringify(user));
-  localStorage.setItem('gvRememberMe',remember ? '1' : '0');
+  try{
+    temporary.removeItem('gvUserToken');
+    temporary.removeItem('gvUser');
+    persistent.setItem('gvUserToken',token);
+    persistent.setItem('gvUser',JSON.stringify(user));
+    localStorage.setItem('gvRememberMe',remember ? '1' : '0');
+  }catch(error){
+    // Bazı mobil tarayıcılar özel modda localStorage yazımını engelleyebilir.
+    // Giriş yine tamamlanır; yalnızca tarayıcı kapatılınca oturum sona erer.
+    sessionStorage.setItem('gvUserToken',token);
+    sessionStorage.setItem('gvUser',JSON.stringify(user));
+    console.warn('Kalıcı oturum kaydedilemedi, geçici oturum kullanılıyor:',error);
+  }
 }
 
 async function restoreServerSession(){
@@ -1228,7 +1236,11 @@ async function submitLogin(){
     if(!res.ok){throw new Error(data.error || 'Giriş yapılamadı.');}
     userToken=data.token;
     currentUser=data.user;
-    currentUser.avatar=localStorage.getItem(`gvAvatar:${currentUser.email}`) || '';
+    try{
+      currentUser.avatar=localStorage.getItem(`gvAvatar:${currentUser.email}`) || '';
+    }catch(error){
+      currentUser.avatar='';
+    }
     saveUserSession(userToken,currentUser,remember);
     showMsg('loginOk','loginErr','ok','✅ Giriş yapıldı.');
     reactPet('happy');
