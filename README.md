@@ -111,9 +111,27 @@ NETGSM_PASSWORD=
 NETGSM_HEADER=
 ```
 
-Mail icin:
+Render Free üzerinde işlem mailleri için Brevo HTTP API kullanın:
 
 ```text
+MAIL_PROVIDER=brevo
+BREVO_API_KEY=
+BREVO_SENDER_EMAIL=
+BREVO_SENDER_NAME=Gümüş Veteriner
+BREVO_REPLY_TO=
+DEBUG_MAIL_TEST=false
+SMTP_TEST_RECIPIENT=
+```
+
+`BREVO_API_KEY` değerini Brevo Transactional API anahtarından alın.
+`BREVO_SENDER_EMAIL` adresini Brevo panelinde gönderici olarak doğrulayın.
+Render Free planında SMTP portları kapalı olduğu için HTTPS tabanlı Brevo API
+önerilir.
+
+Ücretli sunucu veya yerel geliştirmede SMTP fallback kullanmak isterseniz:
+
+```text
+MAIL_PROVIDER=smtp
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USERNAME=
