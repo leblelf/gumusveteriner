@@ -1806,6 +1806,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             data = self.read_json()
             email = validate_email(data.get("email", ""))
             password = data.get("password", "")
+            remember = bool(data.get("remember", False))
         except (json.JSONDecodeError, ValueError) as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
@@ -1824,11 +1825,9 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": message}, HTTPStatus.UNAUTHORIZED)
                 return
 
-            token = secrets.token_urlsafe(32)
-            db.execute(
-                "INSERT INTO sessions (token, user_id, role, created_at) VALUES (?, ?, ?, ?)",
-                (token, user["id"], user["role"], datetime.now().isoformat(timespec="seconds")),
-            )
+            # Klasik giriş de Google girişiyle aynı session üreticisini kullanır.
+            # Böylece "Beni hatırla" seçimi Flask cookie'sine de uygulanır.
+            token = create_user_session(db, user, remember=remember)
             db.commit()
 
         self.send_json(
@@ -2032,6 +2031,11 @@ def health() -> tuple[str, int]:
 
 @app.route("/api/health")
 def api_health():
+    sqlite_storage = (
+        "persistent-disk"
+        if os.environ.get("SQLITE_DB_PATH") and DB_PATH != DEFAULT_DB_PATH
+        else "ephemeral-local"
+    )
     return api_response(
         True,
         "API çalışıyor",
@@ -2040,6 +2044,7 @@ def api_health():
             "database_pool": "sqlalchemy-ready",
             "runtime_database": "legacy-sqlite",
             "configured_database": "postgresql" if os.environ.get("DATABASE_URL") else "sqlite",
+            "sqlite_storage": sqlite_storage,
         },
     )
 

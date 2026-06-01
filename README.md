@@ -184,6 +184,10 @@ Render'da SQLite kayıtlarını kalıcı tutmak için:
 Persistent disk eklenmezse Render yeniden başladığında yeni üyeler ve diğer
 SQLite kayıtları kaybolabilir.
 
+Deploy sonrasında `https://wwwgumusvet.com/api/health` adresini açın.
+`sqlite_storage` değeri `persistent-disk` görünmelidir. Değer
+`ephemeral-local` ise Render diski henüz doğru bağlanmamıştır.
+
 ## Cloudflare Güvenlik Ayarları
 
 - SSL/TLS encryption mode: `Full`

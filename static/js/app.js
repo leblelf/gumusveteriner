@@ -1223,7 +1223,7 @@ async function submitLogin(){
   const btn=document.getElementById('loginBtn');
   btn.textContent='Giriş yapılıyor...';btn.disabled=true;
   try{
-    const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+    const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password,remember})});
     const data=await res.json();
     if(!res.ok){throw new Error(data.error || 'Giriş yapılamadı.');}
     userToken=data.token;
