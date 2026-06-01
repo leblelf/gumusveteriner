@@ -309,7 +309,7 @@ body.user-session .notification-wrap{display:block}
 .notification-btn{position:relative;width:36px;height:36px;border:1px solid var(--border2);border-radius:50%;background:var(--card);cursor:pointer}
 .notification-badge{position:absolute;right:-6px;top:-6px;display:none;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;border-radius:12px;background:var(--red);color:#fff;font-size:10px;font-weight:700}
 .notification-panel{display:none;position:absolute;right:0;top:44px;width:min(360px,88vw);max-height:420px;overflow:auto;border:1px solid var(--border2);border-radius:12px;background:var(--card);box-shadow:var(--shadow);z-index:930}
-.notification-wrap:hover .notification-panel,.notification-panel.open{display:block}
+.notification-panel.open{display:block}
 .notification-head{display:flex;justify-content:space-between;gap:.5rem;align-items:center;padding:.8rem;border-bottom:1px solid var(--border2);font-size:13px}
 .notification-head button{border:0;background:transparent;color:var(--teal);font-size:11px;cursor:pointer}
 .notification-item{padding:.8rem;border-bottom:1px solid var(--border2)}
@@ -372,7 +372,7 @@ body.user-session .guest-order,body.admin-session .guest-order{display:none}
   /* Telefon ekranlari icin mobil uyum kurallari. */
   body{font-size:14px;overflow-x:hidden}
   .cursor-glow,.blob{display:none}
-  nav{height:64px;min-height:64px;align-items:center;overflow:visible;padding:.6rem 6.45rem .6rem 3.65rem;gap:.35rem;scrollbar-width:none}
+  nav{height:64px;min-height:64px;align-items:center;overflow:visible;padding:.6rem 9.45rem .6rem 3.65rem;gap:.35rem;scrollbar-width:none}
   nav::-webkit-scrollbar{display:none}
   .logo{font-size:1rem;min-width:max-content;margin-right:.25rem}
   .logo-badge{width:34px;height:34px}

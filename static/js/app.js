@@ -267,9 +267,18 @@ function renderNotifications(unreadCount=0){
 }
 
 function toggleNotifications(){
-  document.getElementById('notificationPanel')?.classList.toggle('open');
-  loadNotifications();
+  const panel=document.getElementById('notificationPanel');
+  if(!panel)return;
+  panel.classList.toggle('open');
+  if(panel.classList.contains('open'))loadNotifications();
 }
+
+document.addEventListener('click',event=>{
+  // Bildirim kutusu dışında bir alana dokunulduğunda paneli kapatır.
+  const wrap=document.getElementById('notificationWrap');
+  const panel=document.getElementById('notificationPanel');
+  if(wrap && panel && !wrap.contains(event.target))panel.classList.remove('open');
+});
 
 async function markNotificationsRead(){
   if(!userToken)return;

@@ -1355,14 +1355,26 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                     ).fetchall()
                     item["health_records"] = [row_to_dict(record) for record in records]
                     pet_payload.append(item)
+                # Eski kayıtlarda user_id yoksa tekil e-posta üzerinden bir kez
+                # hesaba bağla. Telefon veya ad benzerliği üzerinden eşleştirme
+                # yapılmaz; böylece aynı isimli üyelerin randevuları karışmaz.
+                db.execute(
+                    """
+                    UPDATE appointments
+                    SET user_id = ?
+                    WHERE user_id IS NULL AND LOWER(email) = LOWER(?)
+                    """,
+                    (user["id"], user["email"]),
+                )
+                db.commit()
                 appointments = db.execute(
                     """
                     SELECT id, pet_id, pet_name, pet_type, service, appt_date, appt_time, notes, status, created_at
                     FROM appointments
-                    WHERE user_id = ? OR (user_id IS NULL AND (email = ? OR phone = ?))
+                    WHERE user_id = ?
                     ORDER BY appt_date DESC, appt_time DESC
                     """,
-                    (user["id"], user["email"], user["phone"]),
+                    (user["id"],),
                 ).fetchall()
             self.send_json(
                 {
@@ -1755,6 +1767,13 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 ).fetchone()
                 if existing:
                     self.send_json({"error": "Bu email ile kayıtlı bir üye zaten var"}, HTTPStatus.CONFLICT)
+                    return
+                existing_phone = db.execute(
+                    "SELECT id FROM users WHERE phone = ?",
+                    (phone,),
+                ).fetchone()
+                if existing_phone:
+                    self.send_json({"error": "Bu telefon numarası ile kayıtlı bir üye zaten var"}, HTTPStatus.CONFLICT)
                     return
                 cursor = db.execute(
                     """
@@ -2419,6 +2438,12 @@ def api_profile_update():
     if profile_picture and not re.fullmatch(r"https?://[^\s]{1,500}", profile_picture):
         return api_response(False, "Profil fotoğrafı için geçerli bir URL girin", None, HTTPStatus.BAD_REQUEST)
     with connect() as db:
+        existing_phone = db.execute(
+            "SELECT id FROM users WHERE phone = ? AND id <> ?",
+            (phone, user["id"]),
+        ).fetchone()
+        if existing_phone:
+            return api_response(False, "Bu telefon numarası başka bir üyede kayıtlı", None, HTTPStatus.CONFLICT)
         db.execute(
             "UPDATE users SET full_name = ?, name = ?, phone = ?, profile_picture = ? WHERE id = ?",
             (full_name, full_name, phone, profile_picture, user["id"]),
