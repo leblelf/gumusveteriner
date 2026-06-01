@@ -167,26 +167,29 @@ Health Check Path:
 /health
 ```
 
-SQLite local geliştirme için çalışmaya devam eder. PostgreSQL bağlantı adresi
-`DATABASE_URL` üzerinden okunur ve SQLAlchemy connection pool altyapısı hazırdır.
-Mevcut eski SQLite handler sorgularının PostgreSQL'e tamamen taşınması ayrı bir
-migration adımıdır. Bu migration tamamlanana kadar Render persistent disk ile
-`data/gumus_veteriner.db` dosyasını kalıcı tutun.
+`DATABASE_URL` tanımlıysa uygulama PostgreSQL kullanır. Değer yoksa local
+geliştirme için `data/gumus_veteriner.db` SQLite fallback devreye girer.
 
-Render'da SQLite kayıtlarını kalıcı tutmak için:
+Render Free planda kalıcı disk olmadığı için production ortamında PostgreSQL
+kullanın:
 
-1. Render Dashboard içinden servisi açın.
-2. `Disks` alanından yeni disk ekleyin ve mount path olarak `/var/data` yazın.
-3. Environment Variables alanına
-   `SQLITE_DB_PATH=/var/data/gumus_veteriner.db` ekleyin.
-4. Ayarları kaydedip `Manual Deploy` ile yeniden deploy edin.
+1. Render Dashboard içinden yeni bir PostgreSQL veritabanı oluşturun.
+2. PostgreSQL sayfasındaki `Internal Database URL` değerini kopyalayın.
+3. Web Service > `Environment` alanına `DATABASE_URL` adıyla ekleyin.
+4. Web servisini `Manual Deploy` ile yeniden deploy edin.
+5. `https://wwwgumusvet.com/api/health` adresinde
+   `"database_type": "postgres"` değerini kontrol edin.
 
-Persistent disk eklenmezse Render yeniden başladığında yeni üyeler ve diğer
-SQLite kayıtları kaybolabilir.
+Local SQLite verilerini PostgreSQL'e bir defalık aktarmak için:
 
-Deploy sonrasında `https://wwwgumusvet.com/api/health` adresini açın.
-`sqlite_storage` değeri `persistent-disk` görünmelidir. Değer
-`ephemeral-local` ise Render diski henüz doğru bağlanmamıştır.
+```powershell
+$env:DATABASE_URL="Render Internal Database URL"
+python scripts/migrate_sqlite_to_postgres.py
+```
+
+Taşıma komutu kullanıcılar, adminler, ürünler, randevular ve diğer ilişkili
+tabloları ID değerlerini koruyarak PostgreSQL'e aktarır. Canlı veritabanını
+taşımadan önce yerel SQLite dosyasının yedeğini alın.
 
 ## Cloudflare Güvenlik Ayarları
 

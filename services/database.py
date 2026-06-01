@@ -1,10 +1,10 @@
 ﻿from __future__ import annotations
 
 """
-Production veritabanı bağlantısı hazırlığı.
+Production veritabanı bağlantı yardımcıları.
 
-Mevcut site SQLite ile çalışmaya devam eder. Render PostgreSQL'e geçişte
-SQLAlchemy engine'i bu dosyadan alınabilir; pool ayarları tek yerde tutulur.
+Render'da DATABASE_URL tanımlandığında PostgreSQL kullanılır. DATABASE_URL
+yoksa local geliştirme için SQLite fallback devreye girer.
 """
 
 import os

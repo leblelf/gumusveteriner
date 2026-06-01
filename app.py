@@ -62,6 +62,7 @@ DB_PATH = Path(
 ).resolve()
 HOST = "0.0.0.0"
 load_local_env()
+DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
 PORT = int(os.environ.get("PORT", 5000))
 IS_PRODUCTION = bool(os.environ.get("RENDER") or os.environ.get("RAILWAY_ENVIRONMENT"))
 
@@ -113,7 +114,7 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
     MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES,
     SQLALCHEMY_DATABASE_URI=normalize_database_url(
-        os.environ.get("DATABASE_URL") or f"sqlite:///{DB_PATH.as_posix()}"
+        DATABASE_URL or f"sqlite:///{DB_PATH.as_posix()}"
     ),
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     SQLALCHEMY_ENGINE_OPTIONS={
@@ -176,7 +177,11 @@ def ensure_database_directory() -> None:
 
 
 def connect() -> sqlite3.Connection:
-    """Local SQLite veritabanına bağlanır ve satırları sözlük gibi okunabilir yapar."""
+    """DATABASE_URL varsa PostgreSQL'e, yoksa local SQLite dosyasına bağlanır."""
+    if DATABASE_URL:
+        from services.postgres_adapter import PostgresConnection
+
+        return PostgresConnection(DATABASE_URL)
     ensure_database_directory()
     db = sqlite3.connect(DB_PATH, timeout=15)
     db.row_factory = sqlite3.Row
@@ -473,10 +478,16 @@ def ensure_database_initialized() -> None:
     with _DB_INIT_LOCK:
         if _DB_INITIALIZED:
             return
-        ensure_database_directory()
+        if not DATABASE_URL:
+            ensure_database_directory()
         try:
             init_db()
         except Exception:
+            if DATABASE_URL:
+                # PostgreSQL şeması kurulamazsa deploy açıkça hata vermeli.
+                # Eksik tablolarla çalışmak sessiz veri kaybına yol açabilir.
+                security_logger.exception("postgres_database_init_failed")
+                raise
             # Eski production veritabanında beklenmeyen bir migration uyumsuzluğu
             # varsa mevcut tablolarla siteyi çalışır tut. Hata loglarda kalır ve
             # sonraki deploy öncesinde ayrıca incelenebilir.
@@ -492,7 +503,11 @@ def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: s
         raise ValueError("Geçersiz kolon adı")
     if not re.fullmatch(r"[A-Za-z0-9_ ()'.,-]+", definition):
         raise ValueError("Geçersiz kolon tanımı")
-    columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+    columns = (
+        db.table_columns(table)
+        if hasattr(db, "table_columns")
+        else {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+    )
     if column not in columns:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
@@ -1453,8 +1468,10 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                         now,
                     ),
                 )
-            except sqlite3.IntegrityError as exc:
-                if "DUPLICATE_APPOINTMENT_SLOT" in str(exc):
+            except Exception as exc:
+                if "DUPLICATE_APPOINTMENT_SLOT" in str(exc) or (
+                    DATABASE_URL and "idx_appointments_active_slot" in str(exc)
+                ):
                     self.send_json({"error": "Bu randevu saati dolu. Lutfen baska bir saat secin."}, HTTPStatus.CONFLICT)
                     return
                 raise
@@ -1794,8 +1811,10 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                     "SELECT id, full_name, email, phone, role, created_at FROM users WHERE id = ?",
                     (cursor.lastrowid,),
                 ).fetchone()
-        except sqlite3.IntegrityError:
-            self.send_json({"error": "Bu email ile kayıtlı bir üye zaten var"}, HTTPStatus.CONFLICT)
+        except Exception as exc:
+            if "unique" not in str(exc).lower() and "duplicate" not in str(exc).lower():
+                raise
+            self.send_json({"error": "Bu email veya telefon ile kayıtlı bir üye zaten var"}, HTTPStatus.CONFLICT)
             return
 
         self.send_json(row_to_dict(user), HTTPStatus.CREATED)
@@ -2031,19 +2050,23 @@ def health() -> tuple[str, int]:
 
 @app.route("/api/health")
 def api_health():
-    sqlite_storage = (
-        "persistent-disk"
-        if os.environ.get("SQLITE_DB_PATH") and DB_PATH != DEFAULT_DB_PATH
-        else "ephemeral-local"
-    )
+    database_type = "postgres" if DATABASE_URL else "sqlite"
+    sqlite_storage = None
+    if not DATABASE_URL:
+        sqlite_storage = (
+            "persistent-disk"
+            if os.environ.get("SQLITE_DB_PATH") and DB_PATH != DEFAULT_DB_PATH
+            else "ephemeral-local"
+        )
     return api_response(
         True,
         "API çalışıyor",
         {
             "service": "gumus-veteriner",
             "database_pool": "sqlalchemy-ready",
-            "runtime_database": "legacy-sqlite",
-            "configured_database": "postgresql" if os.environ.get("DATABASE_URL") else "sqlite",
+            "database_type": database_type,
+            "runtime_database": database_type,
+            "configured_database": database_type,
             "sqlite_storage": sqlite_storage,
         },
     )
