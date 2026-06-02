@@ -307,6 +307,8 @@ textarea{resize:vertical;min-height:80px}
 .notification-wrap{display:none;position:relative}
 body.user-session .notification-wrap{display:block}
 .notification-btn{position:relative;width:36px;height:36px;border:1px solid var(--border2);border-radius:50%;background:var(--card);cursor:pointer}
+.notification-wrap.has-unread .notification-btn{border-color:var(--amber);box-shadow:0 0 0 4px color-mix(in srgb,var(--amber-l),transparent 20%);animation:notificationPulse 1.8s ease-in-out infinite}
+@keyframes notificationPulse{50%{transform:translateY(-2px)}}
 .notification-badge{position:absolute;right:-6px;top:-6px;display:none;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;border-radius:12px;background:var(--red);color:#fff;font-size:10px;font-weight:700}
 .notification-panel{display:none;position:absolute;right:0;top:44px;width:min(360px,88vw);max-height:420px;overflow:auto;border:1px solid var(--border2);border-radius:12px;background:var(--card);box-shadow:var(--shadow);z-index:930}
 .notification-panel.open{display:block}

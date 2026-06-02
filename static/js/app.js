@@ -24,6 +24,7 @@ let PROFILE = {addresses:[], pets:[]};
 let PENDING_ORDER = null;
 let SITE_REVIEWS = [];
 let NOTIFICATIONS = [];
+let KNOWN_NOTIFICATION_IDS = new Set();
 document.documentElement.dataset.theme=localStorage.getItem('gvTheme') || 'light';
 
 window.addEventListener('load',()=>setTimeout(()=>document.getElementById('loader').classList.add('done'),650));
@@ -248,8 +249,15 @@ async function loadNotifications(){
     const res=await fetch('/api/notifications',{headers:authHeaders()});
     const payload=await res.json();
     if(!res.ok)return;
-    NOTIFICATIONS=payload.data.items || [];
+    const nextNotifications=payload.data.items || [];
+    const newUnread=nextNotifications.filter(item=>!item.is_read && !KNOWN_NOTIFICATION_IDS.has(Number(item.id)));
+    NOTIFICATIONS=nextNotifications;
+    KNOWN_NOTIFICATION_IDS=new Set(nextNotifications.map(item=>Number(item.id)));
     renderNotifications(payload.data.unread_count || 0);
+    if(newUnread.length){
+      const latest=newUnread[0];
+      toast(`${latest.title}: ${latest.message}`,'ok');
+    }
   }catch(e){console.warn('Bildirimler yüklenemedi:',e);}
 }
 
@@ -258,6 +266,7 @@ function renderNotifications(unreadCount=0){
   const badge=document.getElementById('notificationCount');
   const list=document.getElementById('notificationList');
   if(wrap)wrap.style.display=userToken?'block':'none';
+  if(wrap)wrap.classList.toggle('has-unread',unreadCount>0);
   if(badge){
     badge.textContent=unreadCount;
     badge.style.display=unreadCount>0?'inline-flex':'none';
@@ -824,6 +833,7 @@ function clearStoredUserSession(){
   currentUser=null;
   PROFILE={user:null,addresses:[],pets:[],appointments:[]};
   NOTIFICATIONS=[];
+  KNOWN_NOTIFICATION_IDS=new Set();
   localStorage.removeItem('gvUserToken');
   localStorage.removeItem('gvUser');
   sessionStorage.removeItem('gvUserToken');
@@ -845,6 +855,7 @@ async function logout(){
   currentUser=null;
   PROFILE={user:null,addresses:[],pets:[]};
   NOTIFICATIONS=[];
+  KNOWN_NOTIFICATION_IDS=new Set();
   localStorage.removeItem('gvUserToken');
   localStorage.removeItem('gvAdminToken');
   localStorage.removeItem('gvUser');
