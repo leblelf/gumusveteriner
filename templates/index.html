@@ -488,6 +488,28 @@
         <div class="sec-title" style="font-size:1.35rem">Randevularım</div>
         <div class="profile-list" id="profileAppointmentList"><div class="skeleton"></div></div>
       </div>
+      <div class="profile-card">
+        <div class="sec-title" style="font-size:1.35rem">Yorumlarım</div>
+        <div class="profile-list" id="profileReviewList"><div class="skeleton"></div></div>
+      </div>
+      <div class="profile-card" id="reviewEditCard" style="display:none">
+        <div class="sec-title" style="font-size:1.35rem">Yorumumu Düzenle</div>
+        <form id="reviewEditForm" onsubmit="return false">
+          <input type="hidden" id="reviewEditId">
+          <div class="frow">
+            <div><label>Puan</label><select id="reviewEditRating"><option value="5">5 yıldız</option><option value="4">4 yıldız</option><option value="3">3 yıldız</option><option value="2">2 yıldız</option><option value="1">1 yıldız</option></select></div>
+            <div><label>Hayvan Türü</label><input type="text" id="reviewEditPetType" maxlength="80" placeholder="Kedi, Köpek..."></div>
+          </div>
+          <label>Yorumunuz *</label>
+          <textarea id="reviewEditMessage" maxlength="500" placeholder="Deneyiminizi kısaca yazın..."></textarea>
+          <div class="frow">
+            <button class="btn-submit" type="button" onclick="updateOwnReview()">Değişiklikleri Kaydet</button>
+            <button class="btn-submit" type="button" style="background:var(--muted)" onclick="cancelReviewEdit()">Vazgeç</button>
+          </div>
+          <div class="msg-ok" id="reviewEditOk"></div>
+          <div class="msg-err" id="reviewEditErr"></div>
+        </form>
+      </div>
     </div>
   </div>
 </div>

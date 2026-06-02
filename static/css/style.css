@@ -385,8 +385,10 @@ body.user-session .guest-order,body.admin-session .guest-order{display:none}
   .notification-wrap{position:fixed;right:6.75rem;top:.75rem;z-index:920}
   .notification-btn{width:42px;height:42px;border-radius:14px;box-shadow:var(--shadow)}
   .notification-panel{position:fixed;right:.75rem;top:4rem;width:min(360px,calc(100vw - 1.5rem))}
-  /* Menü kapalıyken yalnızca üç çizgi, bildirim, tema ve sepet üst barda kalır. */
-  nav:not(.mobile-open)>.logo,nav:not(.mobile-open)>.nav-user{display:none!important}
+  /* Menü kapalıyken logo, üç çizgi, bildirim, tema ve sepet üst barda kalır. */
+  nav:not(.mobile-open)>.nav-user{display:none!important}
+  nav:not(.mobile-open)>.logo{display:flex!important;font-size:.95rem;gap:0;margin:0;overflow:hidden}
+  nav:not(.mobile-open)>.logo .logo-badge{display:none}
   nav:not(.mobile-open)>.nb:not(.mobile-menu-btn):not(.cart-nav-btn){display:none!important}
   nav.mobile-open{position:fixed;left:0;top:0;bottom:0;width:min(84vw,320px);height:100vh;z-index:850;align-items:stretch;align-content:flex-start;flex-direction:column;flex-wrap:nowrap;padding:1rem;box-shadow:22px 0 70px rgba(0,0,0,.22);overflow-y:auto}
   nav.mobile-open .nb{display:flex;width:100%;justify-content:flex-start;border-radius:12px;padding:12px 14px;background:transparent}

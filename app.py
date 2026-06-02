@@ -1391,12 +1391,22 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                     """,
                     (user["id"],),
                 ).fetchall()
+                reviews = db.execute(
+                    """
+                    SELECT id, author, pet_type, product_name, rating, message, reply, active, created_at
+                    FROM site_reviews
+                    WHERE user_id = ?
+                    ORDER BY id DESC
+                    """,
+                    (user["id"],),
+                ).fetchall()
             self.send_json(
                 {
                     "user": row_to_dict(user),
                     "addresses": [row_to_dict(row) for row in addresses],
                     "pets": pet_payload,
                     "appointments": [row_to_dict(row) for row in appointments],
+                    "reviews": [row_to_dict(row) for row in reviews],
                 }
             )
             return
@@ -2430,6 +2440,44 @@ def api_member_review_delete(review_id: int):
     if cursor.rowcount < 1:
         return api_response(False, "Yorum bulunamadı veya bu yorumu silme yetkiniz yok", None, HTTPStatus.NOT_FOUND)
     return api_response(True, "Yorumunuz silindi", {})
+
+
+@app.route("/api/reviews/<int:review_id>", methods=["PATCH", "PUT"])
+def api_member_review_update(review_id: int):
+    """Üye yalnızca kendi yorumunun metnini, puanını ve hayvan türünü düzenleyebilir."""
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Yorum düzenlemek için üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+    pet_type = (data.get("pet_type") or "Hasta Sahibi").strip()
+    try:
+        rating = int(data.get("rating") or 5)
+    except (TypeError, ValueError):
+        return api_response(False, "Puan geçersiz", None, HTTPStatus.BAD_REQUEST)
+    if len(message) < 8 or len(message) > 500:
+        return api_response(False, "Yorum 8 ile 500 karakter arasında olmalı", None, HTTPStatus.BAD_REQUEST)
+    if rating < 1 or rating > 5:
+        return api_response(False, "Puan 1 ile 5 arasında olmalı", None, HTTPStatus.BAD_REQUEST)
+    if len(pet_type) > 80:
+        return api_response(False, "Hayvan türü en fazla 80 karakter olabilir", None, HTTPStatus.BAD_REQUEST)
+    with connect() as db:
+        cursor = db.execute(
+            """
+            UPDATE site_reviews
+            SET message = ?, pet_type = ?, rating = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (message, pet_type, rating, review_id, user["id"]),
+        )
+        db.commit()
+        row = db.execute(
+            "SELECT * FROM site_reviews WHERE id = ? AND user_id = ?",
+            (review_id, user["id"]),
+        ).fetchone()
+    if cursor.rowcount < 1 or not row:
+        return api_response(False, "Yorum bulunamadı veya bu yorumu düzenleme yetkiniz yok", None, HTTPStatus.NOT_FOUND)
+    return api_response(True, "Yorumunuz güncellendi", row_to_dict(row))
 
 
 @app.route("/api/notifications", methods=["GET"])

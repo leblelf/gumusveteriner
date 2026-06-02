@@ -207,10 +207,10 @@ function renderSiteReviews(reviews){
   wrap.innerHTML=reviews.slice(0,6).map(item=>{
     const rating=Math.max(0,Math.min(5,Number(item.rating||5)));
     const stars='★'.repeat(rating)+'☆'.repeat(5-rating);
-    const product=item.product_name && item.product_name!=='Genel' ? `<div class="tag" style="margin-bottom:.55rem">${item.product_name}</div>` : '';
-    const reply=item.reply ? `<div class="info-box" style="margin-top:.8rem;padding:.75rem;font-size:13px"><strong>Gümüş Veteriner:</strong> ${item.reply}</div>` : '';
+    const product=item.product_name && item.product_name!=='Genel' ? `<div class="tag" style="margin-bottom:.55rem">${escHtml(item.product_name)}</div>` : '';
+    const reply=item.reply ? `<div class="info-box" style="margin-top:.8rem;padding:.75rem;font-size:13px"><strong>Gümüş Veteriner:</strong> ${escHtml(item.reply)}</div>` : '';
     const remove=item.can_delete ? `<button class="review-delete" type="button" onclick="deleteOwnReview(${item.id})">Yorumumu Sil</button>` : '';
-    return `<div class="rc"><div class="stars">${stars}</div>${product}<blockquote>"${item.message}"</blockquote>${reply}<cite>${item.author} — ${item.pet_type || 'Hasta Sahibi'}</cite>${remove}</div>`;
+    return `<div class="rc"><div class="stars">${stars}</div>${product}<blockquote>"${escHtml(item.message)}"</blockquote>${reply}<cite>${escHtml(item.author)} — ${escHtml(item.pet_type || 'Hasta Sahibi')}</cite>${remove}</div>`;
   }).join('');
 }
 function renderAllSiteReviews(reviews){
@@ -220,10 +220,10 @@ function renderAllSiteReviews(reviews){
   wrap.innerHTML=reviews.map(item=>{
     const rating=Math.max(0,Math.min(5,Number(item.rating||5)));
     const stars='★'.repeat(rating)+'☆'.repeat(5-rating);
-    const product=item.product_name ? `<div class="tag" style="margin-bottom:.55rem">${item.product_name}</div>` : '<div class="tag" style="margin-bottom:.55rem">Genel</div>';
-    const reply=item.reply ? `<div class="info-box" style="margin-top:.8rem;padding:.75rem;font-size:13px"><strong>Gümüş Veteriner:</strong> ${item.reply}</div>` : '';
+    const product=item.product_name ? `<div class="tag" style="margin-bottom:.55rem">${escHtml(item.product_name)}</div>` : '<div class="tag" style="margin-bottom:.55rem">Genel</div>';
+    const reply=item.reply ? `<div class="info-box" style="margin-top:.8rem;padding:.75rem;font-size:13px"><strong>Gümüş Veteriner:</strong> ${escHtml(item.reply)}</div>` : '';
     const remove=item.can_delete ? `<button class="review-delete" type="button" onclick="deleteOwnReview(${item.id})">Yorumumu Sil</button>` : '';
-    return `<div class="rc"><div class="stars">${stars}</div>${product}<blockquote>"${item.message}"</blockquote>${reply}<cite>${item.author} — ${item.pet_type || 'Hasta Sahibi'}</cite>${remove}</div>`;
+    return `<div class="rc"><div class="stars">${stars}</div>${product}<blockquote>"${escHtml(item.message)}"</blockquote>${reply}<cite>${escHtml(item.author)} — ${escHtml(item.pet_type || 'Hasta Sahibi')}</cite>${remove}</div>`;
   }).join('');
 }
 
@@ -237,6 +237,7 @@ async function deleteOwnReview(id){
     if(!res.ok)throw new Error(payload.message || payload.error || 'Yorum silinemedi.');
     toast('Yorumunuz silindi.','ok');
     await loadSiteContent();
+    await loadProfile();
   }catch(e){toast(e.message || 'Yorum silinemedi.','err');}
 }
 
@@ -268,9 +269,9 @@ function renderNotifications(unreadCount=0){
   }
   list.innerHTML=NOTIFICATIONS.map(item=>`
     <div class="notification-item ${item.is_read ? '' : 'unread'}">
-      <strong>${item.title}</strong>
-      <p>${item.message}</p>
-      <small>${item.created_at.replace('T',' ')}</small>
+      <strong>${escHtml(item.title)}</strong>
+      <p>${escHtml(item.message)}</p>
+      <small>${escHtml(item.created_at.replace('T',' '))}</small>
     </div>`).join('');
 }
 
@@ -393,7 +394,8 @@ function renderOrderSummary(){
 }
 
 // ── Ürün listesi ─────────────────────────────────────────────────────────────
-function escAttr(value){return String(value||'').replace(/'/g,'&#39;').replace(/"/g,'&quot;');}
+function escHtml(value){return String(value||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function escAttr(value){return escHtml(value);}
 function productMedia(p){
   if(p.image_emoji){return `<div class="pc-img">${p.image_emoji}</div>`;}
   if(!p.image_url){return '';}
@@ -477,7 +479,9 @@ function renderProfile(){
   document.getElementById('profileName').textContent=user.full_name || 'Üye';
   document.getElementById('profileEmail').textContent=[user.email,user.phone].filter(Boolean).join(' • ') || 'Profil bilgileri';
   const avatar=document.getElementById('profileAvatar');
-  const saved=currentUser?.avatar || user.profile_picture || currentUser?.profile_picture || localStorage.getItem(`gvAvatar:${user.email}`) || '';
+  let localAvatar='';
+  try{localAvatar=localStorage.getItem(`gvAvatar:${user.email}`) || '';}catch(error){}
+  const saved=currentUser?.avatar || user.profile_picture || currentUser?.profile_picture || localAvatar;
   avatar.innerHTML=saved ? `<img src="${saved}" alt="Profil fotoğrafı">` : (user.full_name || 'GV').split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase();
   document.getElementById('profileEditName').value=user.full_name || '';
   document.getElementById('profileEditPhone').value=user.phone || '';
@@ -528,6 +532,52 @@ function renderProfile(){
       </div>
       <div>${item.notes || 'Ek not bulunmuyor.'}</div>
     </div>`).join('') : '<div class="info-box" style="margin:0">Henüz randevunuz bulunmuyor.</div>';
+  const reviewList=document.getElementById('profileReviewList');
+  reviewList.innerHTML=(PROFILE.reviews || []).length ? PROFILE.reviews.map(item=>`
+    <div class="profile-item">
+      <div class="profile-item-head">
+        <div><strong>${escHtml(item.product_name || 'Genel klinik yorumu')}</strong><small>${'★'.repeat(Number(item.rating || 5))}${'☆'.repeat(5-Number(item.rating || 5))} • ${escHtml((item.created_at || '').replace('T',' '))}</small></div>
+        <div>
+          <button class="danger-mini" style="background:var(--teal);margin-right:.35rem" onclick="beginReviewEdit(${item.id})">Düzenle</button>
+          <button class="danger-mini" onclick="deleteOwnReview(${item.id})">Sil</button>
+        </div>
+      </div>
+      <div>${escHtml(item.message)}</div>
+      ${item.reply ? `<div class="info-box" style="margin:.65rem 0 0;padding:.65rem"><strong>Gümüş Veteriner yanıtı</strong><div>${escHtml(item.reply)}</div></div>` : ''}
+    </div>`).join('') : '<div class="info-box" style="margin:0">Henüz yorumunuz bulunmuyor.</div>';
+}
+
+function beginReviewEdit(id){
+  const item=(PROFILE.reviews || []).find(review=>Number(review.id)===Number(id));
+  if(!item)return;
+  document.getElementById('reviewEditId').value=item.id;
+  document.getElementById('reviewEditRating').value=String(item.rating || 5);
+  document.getElementById('reviewEditPetType').value=item.pet_type || '';
+  document.getElementById('reviewEditMessage').value=item.message || '';
+  document.getElementById('reviewEditCard').style.display='block';
+  document.getElementById('reviewEditCard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function cancelReviewEdit(){
+  document.getElementById('reviewEditForm').reset();
+  document.getElementById('reviewEditCard').style.display='none';
+}
+async function updateOwnReview(){
+  const id=Number(document.getElementById('reviewEditId').value);
+  const payload={
+    rating:Number(document.getElementById('reviewEditRating').value || 5),
+    pet_type:document.getElementById('reviewEditPetType').value.trim() || 'Hasta Sahibi',
+    message:document.getElementById('reviewEditMessage').value.trim()
+  };
+  if(payload.message.length<8){showMsg('reviewEditOk','reviewEditErr','err','Yorum en az 8 karakter olmalı.');return;}
+  try{
+    const res=await fetch(`/api/reviews/${id}`,{method:'PATCH',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(!res.ok || data.success===false)throw new Error(data.message || data.error || 'Yorum güncellenemedi.');
+    toast('Yorumunuz güncellendi.','ok');
+    cancelReviewEdit();
+    await loadProfile();
+    await loadSiteContent();
+  }catch(e){showMsg('reviewEditOk','reviewEditErr','err',e.message || 'Yorum güncellenemedi.');}
 }
 async function loadProfile(){
   // Giriş yapan kullanıcının profil, adres ve hayvan kayıtlarını yükler.
@@ -1066,6 +1116,7 @@ async function submitReview(){
     document.getElementById('reviewForm').reset();
     loadPurchasedProducts().catch(()=>{});
     await loadSiteContent();
+    if(userToken)await loadProfile();
   }catch(e){showMsg('reviewOk','reviewErr','err',e.message || 'Yorum kaydedilemedi.');}
 }
 // ── Siparişten ödeme sayfasına geçiş ─────────────────────────────────────────
@@ -1224,6 +1275,7 @@ async function submitLogin(){
     reactPet('happy');
     updateAuthUI();
     await loadProfile().catch(()=>{});
+    await loadNotifications();
     document.getElementById('loginForm').reset();
   }catch(e){
     reactPet('sad');
@@ -1275,6 +1327,7 @@ async function submitRegister(){
     updateAuthUI();
     document.getElementById('registerForm').reset();
     await loadProfile().catch(()=>{});
+    await loadNotifications();
     go('profile');
   }catch(e){
     reactPet('sad');
@@ -1357,5 +1410,6 @@ async function bootSite(){
 }
 
 bootSite();
-setInterval(()=>{if(userToken)loadNotifications();},30000);
+setInterval(()=>{if(userToken)loadNotifications();},10000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden && userToken)loadNotifications();});
 
