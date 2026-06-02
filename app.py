@@ -1431,6 +1431,10 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
 
         now = datetime.now().isoformat(timespec="seconds")
         with connect() as db:
+            # Dolu bir saat seçildiyse yeni hayvan kaydı oluşturmadan işlemi durdur.
+            if not is_appointment_time_available(db, data["appt_date"], data["appt_time"]):
+                self.send_json({"error": "Bu randevu saati dolu veya kapalı. Lutfen baska bir saat secin."}, HTTPStatus.CONFLICT)
+                return
             selected_pet_id = None
             if user and data.get("pet_id"):
                 selected_pet = db.execute(
@@ -1459,9 +1463,6 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                             """,
                             (user["id"], pet_name, pet_species, now),
                         ).lastrowid
-            if not is_appointment_time_available(db, data["appt_date"], data["appt_time"]):
-                self.send_json({"error": "Bu randevu saati dolu veya kapalı. Lutfen baska bir saat secin."}, HTTPStatus.CONFLICT)
-                return
             try:
                 cursor = db.execute(
                     """
@@ -2653,6 +2654,43 @@ def api_profile_pet_health_delete(pet_id: int, record_id: int):
     if cursor.rowcount < 1:
         return api_response(False, "Sağlık kaydı bulunamadı", None, HTTPStatus.NOT_FOUND)
     return api_response(True, "Sağlık kaydı silindi", {})
+
+
+@app.route("/api/profile/appointments/<int:appointment_id>", methods=["DELETE"])
+def api_profile_appointment_delete(appointment_id: int):
+    """Üyenin geçmiş, tamamlanmış veya iptal edilmiş kendi randevusunu siler."""
+    user = get_request_session_user()
+    if not user or user["is_banned"]:
+        return api_response(False, "Üye girişi gerekli", None, HTTPStatus.UNAUTHORIZED)
+    with connect() as db:
+        appointment = db.execute(
+            """
+            SELECT id, appt_date, appt_time, status
+            FROM appointments
+            WHERE id = ? AND user_id = ?
+            """,
+            (appointment_id, user["id"]),
+        ).fetchone()
+        if not appointment:
+            return api_response(False, "Randevu bulunamadı", None, HTTPStatus.NOT_FOUND)
+        try:
+            appointment_at = datetime.strptime(
+                f"{appointment['appt_date']} {appointment['appt_time']}",
+                "%Y-%m-%d %H:%M",
+            )
+        except ValueError:
+            return api_response(False, "Randevu tarihi geçersiz", None, HTTPStatus.BAD_REQUEST)
+        if appointment_at >= datetime.now() and appointment["status"] not in {"cancelled", "completed"}:
+            return api_response(
+                False,
+                "Yalnızca geçmiş, tamamlanmış veya iptal edilmiş randevular silinebilir",
+                None,
+                HTTPStatus.FORBIDDEN,
+            )
+        db.execute("DELETE FROM appointment_reminders WHERE appointment_id = ?", (appointment_id,))
+        db.execute("DELETE FROM appointments WHERE id = ? AND user_id = ?", (appointment_id, user["id"]))
+        db.commit()
+    return api_response(True, "Randevu geçmişinizden silindi", {})
 
 
 @app.route("/api/profile/purchased-products", methods=["GET"])

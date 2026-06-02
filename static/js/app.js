@@ -536,10 +536,13 @@ function renderProfile(){
   appointmentList.innerHTML=(PROFILE.appointments || []).length ? PROFILE.appointments.map(item=>`
     <div class="profile-item">
       <div class="profile-item-head">
-        <div><strong>${item.appt_date} • ${item.appt_time}</strong><small>${item.pet_name || item.pet_type || 'Hayvan'} • ${item.service}</small></div>
-        <span class="tag">${statusLabels[item.status] || item.status}</span>
+        <div><strong>${escHtml(item.appt_date)} • ${escHtml(item.appt_time)}</strong><small>${escHtml(item.pet_name || item.pet_type || 'Hayvan')} • ${escHtml(item.service)}</small></div>
+        <div>
+          <span class="tag">${escHtml(statusLabels[item.status] || item.status)}</span>
+          ${canDeletePastAppointment(item) ? `<button class="danger-mini" style="margin-left:.4rem" onclick="deletePastAppointment(${item.id})">Sil</button>` : ''}
+        </div>
       </div>
-      <div>${item.notes || 'Ek not bulunmuyor.'}</div>
+      <div>${escHtml(item.notes || 'Ek not bulunmuyor.')}</div>
     </div>`).join('') : '<div class="info-box" style="margin:0">Henüz randevunuz bulunmuyor.</div>';
   const reviewList=document.getElementById('profileReviewList');
   reviewList.innerHTML=(PROFILE.reviews || []).length ? PROFILE.reviews.map(item=>`
@@ -554,6 +557,25 @@ function renderProfile(){
       <div>${escHtml(item.message)}</div>
       ${item.reply ? `<div class="info-box" style="margin:.65rem 0 0;padding:.65rem"><strong>Gümüş Veteriner yanıtı</strong><div>${escHtml(item.reply)}</div></div>` : ''}
     </div>`).join('') : '<div class="info-box" style="margin:0">Henüz yorumunuz bulunmuyor.</div>';
+}
+
+function canDeletePastAppointment(item){
+  // Gelecekteki aktif bir randevunun yanlışlıkla silinmesini arayüzde de engeller.
+  const appointmentAt=new Date(`${item.appt_date}T${item.appt_time || '00:00'}:00`);
+  return item.status==='cancelled'
+    || item.status==='completed'
+    || (!Number.isNaN(appointmentAt.getTime()) && appointmentAt<new Date());
+}
+
+async function deletePastAppointment(id){
+  if(!confirm('Bu randevuyu geçmişinizden silmek istediğinize emin misiniz?'))return;
+  try{
+    const res=await fetch(`/api/profile/appointments/${id}`,{method:'DELETE',headers:authHeaders()});
+    const data=await res.json();
+    if(!res.ok || data.success===false)throw new Error(data.message || data.error || 'Randevu silinemedi.');
+    toast('Randevu geçmişinizden silindi.','ok');
+    await loadProfile();
+  }catch(e){toast(e.message || 'Randevu silinemedi.','err');}
 }
 
 function beginReviewEdit(id){
@@ -1096,7 +1118,8 @@ async function submitAppt(){
     });
     const data = await res.json();
     if(!res.ok){throw new Error(data.error || 'Randevu oluşturulamadı.');}
-    showMsg('apptOk','apptErr','ok',`✅ Randevunuz oluşturuldu! Randevu numaranız: #${data.id}`);
+    const petSaved=userToken && petChoice==='new' ? ' Yeni hayvanınız pet listenize de eklendi.' : '';
+    showMsg('apptOk','apptErr','ok',`✅ Randevunuz oluşturuldu! Randevu numaranız: #${data.id}.${petSaved}`);
     document.getElementById('apptForm').reset();
     if(userToken)await loadProfile();
     applyAppointmentMemberMode();
