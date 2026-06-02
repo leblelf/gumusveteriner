@@ -381,7 +381,7 @@ class _AdminShellState extends State<AdminShell> {
     final pages = [
       DashboardPage(api: api),
       AppointmentPage(api: api, query: query),
-      PetListPage(query: query),
+      PetListPage(api: api, query: query),
       HospitalizedPage(query: query),
       ProductPage(api: api, query: query),
       OrdersPage(api: api, query: query),
@@ -1288,8 +1288,9 @@ class QuickNotesCard extends StatelessWidget {
 }
 
 class PetListPage extends StatefulWidget {
-  const PetListPage({super.key, required this.query});
+  const PetListPage({super.key, required this.api, required this.query});
 
+  final ApiClient api;
   final String query;
 
   @override
@@ -1304,12 +1305,56 @@ class _PetListPageState extends State<PetListPage> {
   bool grid = false;
   int pageIndex = 0;
   PetRecord? selectedPet;
-  final List<PetRecord> pets = appPets;
+  final List<PetRecord> pets = List.of(appPets);
+  bool loadingLivePets = false;
 
   @override
   void initState() {
     super.initState();
     _loadViewMode();
+    _loadLivePets();
+  }
+
+  Future<void> _loadLivePets() async {
+    setState(() => loadingLivePets = true);
+    try {
+      final response = await widget.api.request(AppConstants.petsEndpoint);
+      final rows = (response['data'] as List? ?? [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .map(
+            (item) => PetRecord(
+              (item['name'] ?? 'İsimsiz pet').toString(),
+              (item['record_key'] ?? 'Randevu kaydı').toString(),
+              (item['species'] ?? 'Belirtilmedi').toString(),
+              (item['age'] ?? '').toString(),
+              (item['owner'] ?? '').toString(),
+              (item['phone'] ?? '-').toString(),
+            ),
+          )
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        for (final pet in rows.reversed) {
+          final index = pets.indexWhere((existing) =>
+              existing.tag == pet.tag ||
+              (existing.name.toLowerCase() == pet.name.toLowerCase() &&
+                  existing.phone == pet.phone));
+          if (index >= 0) {
+            pets[index] = pet;
+          } else {
+            pets.insert(0, pet);
+          }
+        }
+        loadingLivePets = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => loadingLivePets = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Canlı pet listesi alınamadı: $error')),
+      );
+    }
   }
 
   Future<void> _loadViewMode() async {
@@ -1364,10 +1409,27 @@ class _PetListPageState extends State<PetListPage> {
         PageHeader(
           title: 'Pet Listesi',
           subtitle: 'Kliniğinize kayıtlı tüm petleri yönetin.',
-          action: FilledButton.icon(
-            onPressed: showAddPet,
-            icon: const Icon(Icons.add),
-            label: const Text('Yeni Pet Ekle'),
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton.filledTonal(
+                onPressed: loadingLivePets ? null : _loadLivePets,
+                icon: loadingLivePets
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
+                tooltip: 'Canlı pet listesini yenile',
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: showAddPet,
+                icon: const Icon(Icons.add),
+                label: const Text('Yeni Pet Ekle'),
+              ),
+            ],
           ),
         ),
         Padding(
@@ -2074,14 +2136,18 @@ class _AppointmentPageState extends State<AppointmentPage> {
                       subtitle: Text(
                           '${item['appt_date']} ${item['appt_time']} • ${item['status']}'),
                       trailing: PopupMenuButton<String>(
-                        onSelected: (status) async {
+                        onSelected: (action) async {
+                          if (action == 'delete') {
+                            await deletePastAppointment(item);
+                            return;
+                          }
                           await widget.api.request(
                               '${AppConstants.appointmentsUpdateEndpoint}/${item['id']}',
                               method: 'PATCH',
-                              body: {'status': status});
+                              body: {'status': action});
                           reload();
                         },
-                        itemBuilder: (_) => const [
+                        itemBuilder: (_) => [
                           PopupMenuItem(
                               value: 'pending', child: Text('Bekliyor')),
                           PopupMenuItem(
@@ -2090,6 +2156,20 @@ class _AppointmentPageState extends State<AppointmentPage> {
                               value: 'completed', child: Text('Tamamlandı')),
                           PopupMenuItem(
                               value: 'cancelled', child: Text('İptal')),
+                          if (isPastAppointment(item)) ...[
+                            const PopupMenuDivider(),
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline,
+                                      color: Color(0xFFE22E4C)),
+                                  SizedBox(width: 8),
+                                  Text('Geçmiş randevuyu sil'),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -2101,6 +2181,59 @@ class _AppointmentPageState extends State<AppointmentPage> {
         ),
       ],
     );
+  }
+
+  bool isPastAppointment(Map<String, dynamic> item) {
+    final value = '${item['appt_date']} ${item['appt_time']}';
+    final appointmentAt = DateTime.tryParse(value);
+    return appointmentAt != null && appointmentAt.isBefore(DateTime.now());
+  }
+
+  Future<void> deletePastAppointment(Map<String, dynamic> item) async {
+    if (!isPastAppointment(item)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Yalnızca geçmiş randevular silinebilir.')),
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Geçmiş randevuyu sil'),
+        content: Text(
+          '${item['appt_date']} ${item['appt_time']} tarihli randevu kalıcı olarak silinsin mi?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.request(
+        '${AppConstants.appointmentsDeleteEndpoint}/${item['id']}',
+        method: 'DELETE',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Geçmiş randevu silindi.')),
+      );
+      reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Randevu silinemedi: $error')),
+      );
+    }
   }
 
   void showAppointmentDetail(Map<String, dynamic> item) {

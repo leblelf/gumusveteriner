@@ -35,6 +35,7 @@ class AppConstants {
   static const String usersEndpoint = '/api/admin/users';
   static const String usersUpdateEndpoint = '/api/admin/users/update';
   static const String usersDeleteEndpoint = '/api/admin/users/delete';
+  static const String petsEndpoint = '/api/admin/pets';
   static const String ordersEndpoint = '/api/admin/orders';
   static const String ordersUpdateEndpoint = '/api/admin/orders/update';
   static const String sendSmsEndpoint = '/api/admin/send-sms';

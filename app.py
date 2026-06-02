@@ -2874,6 +2874,67 @@ def api_admin_users():
     return api_response(True, "Üyeler listelendi", users)
 
 
+@app.route("/api/admin/pets", methods=["GET"])
+@require_admin_api
+def api_admin_pets():
+    """Profil kayıtlarını ve randevudan gelen yeni petleri admin uygulamasına taşır."""
+    with connect() as db:
+        profile_pets = db.execute(
+            """
+            SELECT
+                'profile-' || CAST(pets.id AS TEXT) AS record_key,
+                pets.name,
+                pets.species,
+                COALESCE(pets.age, '') AS age,
+                COALESCE(pets.notes, '') AS notes,
+                COALESCE(users.full_name, '') AS owner,
+                COALESCE(users.phone, '') AS phone,
+                'profile' AS source,
+                pets.created_at
+            FROM pets
+            LEFT JOIN users ON users.id = pets.user_id
+            ORDER BY pets.id DESC
+            """
+        ).fetchall()
+        appointment_pets = db.execute(
+            """
+            SELECT
+                'appointment-' || CAST(MAX(appointments.id) AS TEXT) AS record_key,
+                appointments.pet_name AS name,
+                appointments.pet_type AS species,
+                '' AS age,
+                'Randevu ekranından eklendi' AS notes,
+                TRIM(appointments.first_name || ' ' || appointments.last_name) AS owner,
+                appointments.phone,
+                'appointment' AS source,
+                MAX(appointments.created_at) AS created_at
+            FROM appointments
+            WHERE appointments.pet_id IS NULL
+              AND COALESCE(TRIM(appointments.pet_name), '') <> ''
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM pets
+                  LEFT JOIN users ON users.id = pets.user_id
+                  WHERE LOWER(pets.name) = LOWER(appointments.pet_name)
+                    AND (
+                        pets.user_id = appointments.user_id
+                        OR COALESCE(users.phone, '') = COALESCE(appointments.phone, '')
+                    )
+              )
+            GROUP BY
+                appointments.pet_name,
+                appointments.pet_type,
+                appointments.first_name,
+                appointments.last_name,
+                appointments.phone
+            ORDER BY MAX(appointments.id) DESC
+            """
+        ).fetchall()
+    rows = [row_to_dict(row) for row in profile_pets]
+    rows.extend(row_to_dict(row) for row in appointment_pets)
+    return api_response(True, "Petler listelendi", rows)
+
+
 @app.route("/api/admin/contacts", methods=["GET"])
 @require_admin_api
 def api_admin_contacts():
