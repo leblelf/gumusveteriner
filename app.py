@@ -516,6 +516,13 @@ def row_to_dict(row: sqlite3.Row) -> dict:
     return {key: row[key] for key in row.keys()}
 
 
+def first_column(row):
+    """SQLite Row ve PostgreSQL RealDictRow içinden ilk sütun değerini alır."""
+    if hasattr(row, "values"):
+        return next(iter(row.values()))
+    return row[0]
+
+
 def get_csrf_token() -> str:
     """Browser tabanlı formlar için session'a bağlı CSRF token üretir."""
     token = session.get("csrf_token")
@@ -1304,15 +1311,15 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                 return
             with connect() as db:
                 stats = {
-                    "total_appointments": db.execute("SELECT COUNT(*) FROM appointments").fetchone()[0],
-                    "pending_appointments": db.execute("SELECT COUNT(*) FROM appointments WHERE status = 'pending'").fetchone()[0],
-                    "total_orders": db.execute("SELECT COUNT(*) FROM orders").fetchone()[0],
-                    "total_revenue": db.execute("SELECT COALESCE(SUM(total), 0) FROM orders").fetchone()[0],
-                    "total_products": db.execute("SELECT COUNT(*) FROM products WHERE active = 1").fetchone()[0],
-                    "low_stock_products": db.execute("SELECT COUNT(*) FROM products WHERE stock < 10 AND active = 1").fetchone()[0],
-                    "total_users": db.execute("SELECT COUNT(*) FROM users").fetchone()[0],
-                    "active_users": db.execute("SELECT COUNT(DISTINCT user_id) FROM sessions").fetchone()[0],
-                    "banned_users": db.execute("SELECT COUNT(*) FROM users WHERE is_banned = 1").fetchone()[0],
+                    "total_appointments": first_column(db.execute("SELECT COUNT(*) FROM appointments").fetchone()),
+                    "pending_appointments": first_column(db.execute("SELECT COUNT(*) FROM appointments WHERE status = 'pending'").fetchone()),
+                    "total_orders": first_column(db.execute("SELECT COUNT(*) FROM orders").fetchone()),
+                    "total_revenue": first_column(db.execute("SELECT COALESCE(SUM(total), 0) FROM orders").fetchone()),
+                    "total_products": first_column(db.execute("SELECT COUNT(*) FROM products WHERE active = 1").fetchone()),
+                    "low_stock_products": first_column(db.execute("SELECT COUNT(*) FROM products WHERE stock < 10 AND active = 1").fetchone()),
+                    "total_users": first_column(db.execute("SELECT COUNT(*) FROM users").fetchone()),
+                    "active_users": first_column(db.execute("SELECT COUNT(DISTINCT user_id) FROM sessions").fetchone()),
+                    "banned_users": first_column(db.execute("SELECT COUNT(*) FROM users WHERE is_banned = 1").fetchone()),
                 }
             self.send_json(stats)
             return
@@ -1515,7 +1522,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             self.send_json({"error": "Yorum en fazla 500 karakter olabilir"}, HTTPStatus.BAD_REQUEST)
             return
         with connect() as db:
-            purchased = db.execute("SELECT COUNT(*) FROM orders WHERE user_id = ?", (user["id"],)).fetchone()[0]
+            purchased = first_column(db.execute("SELECT COUNT(*) FROM orders WHERE user_id = ?", (user["id"],)).fetchone())
             if purchased < 1:
                 self.send_json({"error": "Yorum yapabilmek için önce satın alma yapmış olmalısiniz."}, HTTPStatus.FORBIDDEN)
                 return
@@ -2410,7 +2417,8 @@ def api_purchase_review():
                 WHERE orders.user_id = ? AND products.name = ?
                 """,
                 (user["id"], product_name),
-            ).fetchone()[0]
+            ).fetchone()
+            purchased = first_column(purchased)
             if purchased < 1:
                 return api_response(False, "Yalnızca satın aldığınız ürünlere yorum yapabilirsiniz.", None, HTTPStatus.FORBIDDEN)
         cursor = db.execute(
@@ -2497,10 +2505,10 @@ def api_member_notifications():
             """,
             (user["id"],),
         ).fetchall()
-        unread_count = db.execute(
+        unread_count = first_column(db.execute(
             "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0",
             (user["id"],),
-        ).fetchone()[0]
+        ).fetchone())
     return api_response(
         True,
         "Bildirimler listelendi",
