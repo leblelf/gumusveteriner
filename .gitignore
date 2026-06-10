@@ -7,6 +7,8 @@ venv/
 !.env.example
 instance/
 backups/
+*.db
+data/*.db
 *.log
 .DS_Store
 Thumbs.db
