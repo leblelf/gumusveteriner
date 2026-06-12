@@ -493,6 +493,7 @@ def init_db() -> None:
         seed_admin(db)
         seed_api_admin(db)
         seed_site_content(db)
+        seed_legacy_hospitalizations(db)
         ensure_column(db, "users", "is_banned", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(db, "users", "google_id", "TEXT")
         ensure_column(db, "users", "name", "TEXT")
@@ -816,6 +817,74 @@ def seed_site_content(db: sqlite3.Connection) -> None:
             VALUES (?, ?, ?, ?, ?, 1, ?)
             """,
             [(author, pet_type, rating, message, reply, now) for author, pet_type, rating, message, reply in rows],
+        )
+
+
+def seed_legacy_hospitalizations(db: sqlite3.Connection) -> None:
+    """Eski masaüstü uygulamasındaki aktif yatışları bir kez veritabanına taşır."""
+    admitted_at = "2026-05-25T09:00:00"
+    legacy_rows = [
+        (
+            "GÜMÜŞ VET - Luna",
+            "Kedi",
+            "DAMLA TOKUR",
+            "5466696329",
+            "Oda 1",
+            "Serum ve gözlem",
+            "Sıvı tedavisi, ateş takibi ve 4 saatte bir genel durum kontrolü",
+            "İştah ve su tüketimi takip edilecek.",
+        ),
+        (
+            "Tyson",
+            "Köpek",
+            "AHMET TOK",
+            "5422031281",
+            "Oda 2",
+            "Operasyon sonrası takip",
+            "Ağrı kontrolü, pansuman ve antibiyotik protokolü",
+            "Dikiş bölgesi sabah akşam kontrol edilecek.",
+        ),
+        (
+            "ZEYTİN",
+            "Kedi",
+            "ELİF GÜVEN",
+            "5388388949",
+            "Oda 3",
+            "Ateş ve iştahsızlık",
+            "Ateş düşürücü destek, kan tahlili kontrolü ve beslenme takibi",
+            "24 saat gözlem önerildi.",
+        ),
+    ]
+    for pet_name, species, owner, phone, room, diagnosis, treatment, notes in legacy_rows:
+        existing = db.execute(
+            """
+            SELECT 1 FROM hospitalizations
+            WHERE LOWER(pet_name) = LOWER(?) AND diagnosis = ?
+            LIMIT 1
+            """,
+            (pet_name, diagnosis),
+        ).fetchone()
+        if existing:
+            continue
+        db.execute(
+            """
+            INSERT INTO hospitalizations
+            (pet_name, species, owner_name, phone, room, diagnosis, treatment,
+             notes, status, admitted_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+            """,
+            (
+                pet_name,
+                species,
+                owner,
+                phone,
+                room,
+                diagnosis,
+                treatment,
+                notes,
+                admitted_at,
+                admitted_at,
+            ),
         )
 
 
@@ -3363,9 +3432,41 @@ def api_admin_dashboard():
         unanswered = first_column(db.execute(
             "SELECT COUNT(*) FROM contacts WHERE COALESCE(reply, '') = ''"
         ).fetchone())
+        # Pet Listesi ekranı profil petlerini, klinik petlerini ve henüz kalıcı
+        # kayda çevrilmemiş randevu petlerini birlikte gösterir. Dashboard da
+        # aynı kaynağı saymalı; aksi halde iki ekrandaki toplamlar farklı olur.
+        unregistered_appointment_pets = first_column(
+            db.execute(
+                """
+                SELECT COUNT(*) FROM (
+                    SELECT
+                        LOWER(appointments.pet_name),
+                        LOWER(appointments.pet_type),
+                        appointments.phone
+                    FROM appointments
+                    WHERE appointments.pet_id IS NULL
+                      AND appointments.clinic_pet_id IS NULL
+                      AND COALESCE(TRIM(appointments.pet_name), '') <> ''
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM pets
+                          JOIN users ON users.id = pets.user_id
+                          WHERE LOWER(pets.name) = LOWER(appointments.pet_name)
+                            AND LOWER(pets.species) = LOWER(appointments.pet_type)
+                            AND users.phone = appointments.phone
+                      )
+                    GROUP BY
+                        LOWER(appointments.pet_name),
+                        LOWER(appointments.pet_type),
+                        appointments.phone
+                ) AS unregistered_pets
+                """
+            ).fetchone()
+        )
         total_pets = (
             first_column(db.execute("SELECT COUNT(*) FROM pets").fetchone())
             + first_column(db.execute("SELECT COUNT(*) FROM clinic_pets").fetchone())
+            + unregistered_appointment_pets
         )
         active_hospitalizations = first_column(db.execute(
             "SELECT COUNT(*) FROM hospitalizations WHERE status = 'active'"

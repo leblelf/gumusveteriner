@@ -34,11 +34,32 @@ class GumusVetAdminApp extends StatefulWidget {
 class _GumusVetAdminAppState extends State<GumusVetAdminApp> {
   ThemeMode themeMode = ThemeMode.light;
 
-  void toggleTheme() {
+  @override
+  void initState() {
+    super.initState();
+    loadTheme();
+  }
+
+  Future<void> loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedTheme = prefs.getString(AppConstants.themeKey);
+    if (!mounted) return;
     setState(() {
-      themeMode =
-          themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+      themeMode = savedTheme == 'dark' ? ThemeMode.dark : ThemeMode.light;
     });
+  }
+
+  Future<void> toggleTheme() async {
+    final nextMode =
+        themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    setState(() {
+      themeMode = nextMode;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      AppConstants.themeKey,
+      nextMode == ThemeMode.dark ? 'dark' : 'light',
+    );
   }
 
   @override
@@ -1063,6 +1084,7 @@ class _DashboardPageState extends State<DashboardPage> {
         widget.api.request(AppConstants.productsEndpoint),
         widget.api.request(AppConstants.appointmentsEndpoint),
         widget.api.request(AppConstants.dashboardEndpoint),
+        widget.api.request(AppConstants.petsEndpoint),
       ]),
       builder: (context, snapshot) {
         final loading = snapshot.connectionState != ConnectionState.done;
@@ -1070,6 +1092,7 @@ class _DashboardPageState extends State<DashboardPage> {
         final products = data == null ? 0 : (data[0]['data'] as List).length;
         final appointments =
             data == null ? 0 : (data[1]['data'] as List).length;
+        final totalPets = data == null ? 0 : (data[3]['data'] as List).length;
         final dashboard = data == null
             ? <String, dynamic>{}
             : Map<String, dynamic>.from(data[2]['data'] as Map);
@@ -1104,7 +1127,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 children: [
                   MetricCard(
                       title: 'Toplam Pet',
-                      value: '${dashboard['total_pets'] ?? 0}',
+                      value: '$totalPets',
                       icon: Icons.pets_outlined,
                       loading: loading),
                   MetricCard(
@@ -3680,6 +3703,8 @@ class OrdersPage extends StatefulWidget {
 class _OrdersPageState extends State<OrdersPage> {
   late Future<Map<String, dynamic>> future =
       widget.api.request(AppConstants.ordersEndpoint);
+  String localQuery = '';
+  String statusFilter = 'all';
 
   void reload() =>
       setState(() => future = widget.api.request(AppConstants.ordersEndpoint));
@@ -3719,6 +3744,50 @@ class _OrdersPageState extends State<OrdersPage> {
             title: 'Gelen Siparişler',
             subtitle:
                 'Site üzerinden gelen siparişleri ve kargo durumunu yönetin.'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 0, 28, 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  onChanged: (value) => setState(() => localQuery = value),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText:
+                        'Sipariş no, müşteri, telefon veya ürün adı ara...',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 210,
+                child: DropdownButtonFormField<String>(
+                  value: statusFilter,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Sipariş durumu',
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'all', child: Text('Tüm siparişler')),
+                    DropdownMenuItem(value: 'pending', child: Text('Bekliyor')),
+                    DropdownMenuItem(
+                        value: 'confirmed', child: Text('Onaylandı')),
+                    DropdownMenuItem(
+                        value: 'shipped', child: Text('Kargoya verildi')),
+                    DropdownMenuItem(
+                        value: 'delivered', child: Text('Teslim edildi')),
+                    DropdownMenuItem(
+                        value: 'cancelled', child: Text('İptal edildi')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => statusFilter = value ?? 'all'),
+                ),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: FutureBuilder<Map<String, dynamic>>(
             future: future,
@@ -3729,16 +3798,29 @@ class _OrdersPageState extends State<OrdersPage> {
               if (!snapshot.hasData)
                 return const Center(child: CircularProgressIndicator());
               final allRows = snapshot.data!['data'] as List;
-              final q = widget.query.trim().toLowerCase();
-              final rows = q.isEmpty
-                  ? allRows
-                  : allRows
-                      .where((item) => (item as Map<String, dynamic>)
-                          .values
-                          .join(' ')
-                          .toLowerCase()
-                          .contains(q))
-                      .toList();
+              final q = '${widget.query} $localQuery'.trim().toLowerCase();
+              final rows = allRows.where((raw) {
+                final order = raw as Map<String, dynamic>;
+                if (statusFilter != 'all' &&
+                    order['status']?.toString() != statusFilter) {
+                  return false;
+                }
+                final items = (order['items'] as List? ?? [])
+                    .whereType<Map>()
+                    .map((item) => item['name'] ?? '')
+                    .join(' ');
+                final searchText = [
+                  order['id'],
+                  order['first_name'],
+                  order['last_name'],
+                  order['phone'],
+                  order['email'],
+                  order['address'],
+                  items,
+                  statusLabel(order['status']?.toString() ?? ''),
+                ].join(' ').toLowerCase();
+                return q.isEmpty || searchText.contains(q);
+              }).toList();
               if (rows.isEmpty)
                 return const Center(child: Text('Henüz sipariş yok.'));
               return ListView.builder(
