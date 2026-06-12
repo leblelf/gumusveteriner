@@ -382,7 +382,7 @@ class _AdminShellState extends State<AdminShell> {
       DashboardPage(api: api),
       AppointmentPage(api: api, query: query),
       PetListPage(api: api, query: query),
-      HospitalizedPage(query: query),
+      HospitalizedApiPage(api: api, query: query),
       ProductPage(api: api, query: query),
       OrdersPage(api: api, query: query),
       ReviewReplyPage(api: api, query: query),
@@ -1062,6 +1062,7 @@ class _DashboardPageState extends State<DashboardPage> {
       future: Future.wait([
         widget.api.request(AppConstants.productsEndpoint),
         widget.api.request(AppConstants.appointmentsEndpoint),
+        widget.api.request(AppConstants.dashboardEndpoint),
       ]),
       builder: (context, snapshot) {
         final loading = snapshot.connectionState != ConnectionState.done;
@@ -1069,6 +1070,19 @@ class _DashboardPageState extends State<DashboardPage> {
         final products = data == null ? 0 : (data[0]['data'] as List).length;
         final appointments =
             data == null ? 0 : (data[1]['data'] as List).length;
+        final dashboard = data == null
+            ? <String, dynamic>{}
+            : Map<String, dynamic>.from(data[2]['data'] as Map);
+        final monthlySales = (dashboard['monthly_sales'] as List? ?? [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+        final notifications = (dashboard['notifications'] as List? ?? [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+        final bestProduct =
+            dashboard['best_selling_product'] as Map<String, dynamic>?;
         final today = DateTime.now().toIso8601String().split('T').first;
         final todayAppointments = data == null
             ? <Map<String, dynamic>>[]
@@ -1090,9 +1104,9 @@ class _DashboardPageState extends State<DashboardPage> {
                 children: [
                   MetricCard(
                       title: 'Toplam Pet',
-                      value: '${samplePets.length}',
+                      value: '${dashboard['total_pets'] ?? 0}',
                       icon: Icons.pets_outlined,
-                      loading: false),
+                      loading: loading),
                   MetricCard(
                       title: 'Randevular',
                       value: '$appointments',
@@ -1103,6 +1117,49 @@ class _DashboardPageState extends State<DashboardPage> {
                       value: '$products',
                       icon: Icons.inventory_2_outlined,
                       loading: loading),
+                  MetricCard(
+                      title: 'Bu Ay Satış',
+                      value: '₺${dashboard['current_month_sales'] ?? 0}',
+                      icon: Icons.payments_outlined,
+                      loading: loading),
+                  MetricCard(
+                      title: 'Aktif Yatış',
+                      value: '${dashboard['active_hospitalizations'] ?? 0}',
+                      icon: Icons.local_hospital_outlined,
+                      loading: loading),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: MonthlySalesCard(
+                      rows: monthlySales,
+                      changePercent: double.tryParse(
+                              '${dashboard['sales_change_percent'] ?? 0}') ??
+                          0,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: InfoPanel(
+                      title: 'Önemli Bildirimler',
+                      lines: [
+                        if (bestProduct != null)
+                          'En çok satan: ${bestProduct['name']} • ${bestProduct['quantity']} adet',
+                        ...notifications.map(
+                          (item) => '${item['title']}: ${item['message']}',
+                        ),
+                        if (bestProduct == null && notifications.isEmpty)
+                          'Şu anda önemli bir bildirim yok.',
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1182,6 +1239,115 @@ class MetricCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class MonthlySalesCard extends StatelessWidget {
+  const MonthlySalesCard({
+    super.key,
+    required this.rows,
+    required this.changePercent,
+  });
+
+  final List<Map<String, dynamic>> rows;
+  final double changePercent;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = rows
+        .map((row) => double.tryParse('${row['total'] ?? 0}') ?? 0)
+        .toList();
+    final maximum = values.fold<double>(
+      1,
+      (current, value) => value > current ? value : current,
+    );
+    final positive = changePercent >= 0;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Aylık Satış Grafiği',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Chip(
+                  avatar: Icon(
+                    positive ? Icons.trending_up : Icons.trending_down,
+                    size: 16,
+                  ),
+                  label: Text(
+                    '${positive ? '+' : ''}${changePercent.toStringAsFixed(1)}%',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              height: 190,
+              child: rows.isEmpty
+                  ? const Center(child: Text('Henüz satış verisi yok.'))
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        for (var index = 0; index < rows.length; index++)
+                          Expanded(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 5),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '₺${values[index].toStringAsFixed(0)}',
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      color: appMuted(context),
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Tooltip(
+                                    message:
+                                        '${rows[index]['month']}: ₺${values[index].toStringAsFixed(2)}',
+                                    child: AnimatedContainer(
+                                      duration:
+                                          const Duration(milliseconds: 300),
+                                      height:
+                                          18 + 110 * values[index] / maximum,
+                                      decoration: BoxDecoration(
+                                        color: appOrange(context),
+                                        borderRadius:
+                                            const BorderRadius.vertical(
+                                          top: Radius.circular(6),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    '${rows[index]['month']}'.split('-').last,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
+          ],
         ),
       ),
     );
@@ -1327,9 +1493,13 @@ class _PetListPageState extends State<PetListPage> {
               (item['name'] ?? 'İsimsiz pet').toString(),
               (item['record_key'] ?? 'Randevu kaydı').toString(),
               (item['species'] ?? 'Belirtilmedi').toString(),
-              (item['age'] ?? '').toString(),
+              (item['breed'] ?? item['age'] ?? '').toString(),
               (item['owner'] ?? '').toString(),
               (item['phone'] ?? '-').toString(),
+              id: int.tryParse('${item['id'] ?? ''}'),
+              userId: int.tryParse('${item['user_id'] ?? ''}'),
+              appointmentId: int.tryParse('${item['appointment_id'] ?? ''}'),
+              source: (item['source'] ?? 'profile').toString(),
             ),
           )
           .toList();
@@ -2259,6 +2429,33 @@ class _AppointmentPageState extends State<AppointmentPage> {
           ],
         ),
         actions: [
+          if (item['pet_registered'] != 1 &&
+              (item['pet_name']?.toString().trim().isNotEmpty ?? false))
+            FilledButton.tonalIcon(
+              onPressed: () async {
+                try {
+                  await widget.api.request(
+                    '${AppConstants.appointmentsAddPetEndpoint}/${item['id']}/add-pet',
+                    method: 'POST',
+                  );
+                  if (!mounted) return;
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Randevudaki hasta pet listesine eklendi.'),
+                    ),
+                  );
+                  reload();
+                } catch (error) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Pet eklenemedi: $error')),
+                  );
+                }
+              },
+              icon: const Icon(Icons.pets_outlined),
+              label: const Text('Pet Listesine Ekle'),
+            ),
           TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Kapat')),
@@ -2268,9 +2465,546 @@ class _AppointmentPageState extends State<AppointmentPage> {
   }
 }
 
-class HospitalizedPage extends StatefulWidget {
-  const HospitalizedPage({super.key, required this.query});
+class HospitalizedApiPage extends StatefulWidget {
+  const HospitalizedApiPage({
+    super.key,
+    required this.api,
+    required this.query,
+  });
 
+  final ApiClient api;
+  final String query;
+
+  @override
+  State<HospitalizedApiPage> createState() => _HospitalizedApiPageState();
+}
+
+class _HospitalizedApiPageState extends State<HospitalizedApiPage> {
+  late Future<Map<String, dynamic>> future =
+      widget.api.request(AppConstants.hospitalizationsEndpoint);
+  String localQuery = '';
+  String statusFilter = 'active';
+
+  void reload() => setState(
+        () =>
+            future = widget.api.request(AppConstants.hospitalizationsEndpoint),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        PageHeader(
+          title: 'Yatan Hastalar',
+          subtitle: 'Yatış, tedavi ve taburcu geçmişini yönetin.',
+          action: FilledButton.icon(
+            onPressed: showAdmissionForm,
+            icon: const Icon(Icons.add),
+            label: const Text('Hasta Yatışı'),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 0, 28, 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  onChanged: (value) => setState(() => localQuery = value),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText: 'Pet, sahip, tanı, tedavi veya oda ara...',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 180,
+                child: DropdownButtonFormField<String>(
+                  value: statusFilter,
+                  decoration:
+                      const InputDecoration(isDense: true, labelText: 'Durum'),
+                  items: const [
+                    DropdownMenuItem(value: 'active', child: Text('Yatıyor')),
+                    DropdownMenuItem(
+                        value: 'discharged', child: Text('Taburcu')),
+                    DropdownMenuItem(value: 'all', child: Text('Tümü')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => statusFilter = value ?? 'active'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return ErrorState(
+                    message: snapshot.error.toString(), onRetry: reload);
+              }
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final query = '${widget.query} $localQuery'.trim().toLowerCase();
+              final rows = (snapshot.data!['data'] as List)
+                  .whereType<Map>()
+                  .map((item) => Map<String, dynamic>.from(item))
+                  .where((item) {
+                final statusMatches =
+                    statusFilter == 'all' || item['status'] == statusFilter;
+                final text = [
+                  item['pet_name'],
+                  item['owner_name'],
+                  item['phone'],
+                  item['diagnosis'],
+                  item['treatment'],
+                  item['room'],
+                ].join(' ').toLowerCase();
+                return statusMatches && (query.isEmpty || text.contains(query));
+              }).toList();
+              if (rows.isEmpty) {
+                return const Center(
+                    child: Text('Bu filtreye uygun yatış kaydı yok.'));
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                itemCount: rows.length,
+                itemBuilder: (_, index) {
+                  final item = rows[index];
+                  final active = item['status'] == 'active';
+                  return Card(
+                    child: ListTile(
+                      onTap: () => showHospitalDetail(item),
+                      leading: CircleAvatar(
+                        backgroundColor: active
+                            ? const Color(0xFFE1F5EE)
+                            : Colors.blueGrey.withOpacity(.12),
+                        child: Icon(
+                          active
+                              ? Icons.local_hospital_outlined
+                              : Icons.home_outlined,
+                          color: active
+                              ? const Color(0xFF0F6E56)
+                              : Colors.blueGrey,
+                        ),
+                      ),
+                      title: Text(
+                        item['pet_name']?.toString() ?? '-',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text(
+                        '${item['owner_name'] ?? '-'} • ${item['diagnosis']}\n'
+                        'Tedavi: ${item['treatment']}',
+                      ),
+                      isThreeLine: true,
+                      trailing: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        children: [
+                          Chip(label: Text('${item['room'] ?? '-'}')),
+                          Chip(label: Text(active ? 'Yatıyor' : 'Taburcu')),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> showAdmissionForm() async {
+    Map<String, dynamic> response;
+    try {
+      response = await widget.api.request(AppConstants.petsEndpoint);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Pet listesi alınamadı: $error')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final pets = (response['data'] as List)
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    final petName = TextEditingController();
+    final species = TextEditingController(text: 'Kedi');
+    final breed = TextEditingController();
+    final owner = TextEditingController();
+    final phone = TextEditingController();
+    final room = TextEditingController();
+    final diagnosis = TextEditingController();
+    final treatment = TextEditingController();
+    final notes = TextEditingController();
+    Map<String, dynamic>? selectedPet;
+    bool useRegisteredPet = pets.isNotEmpty;
+
+    await showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Hasta Yatışı'),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    value: useRegisteredPet,
+                    onChanged: pets.isEmpty
+                        ? null
+                        : (value) => setDialogState(() {
+                              useRegisteredPet = value;
+                              selectedPet = null;
+                            }),
+                    title: const Text('Kayıtlı hasta seç'),
+                    subtitle: const Text(
+                        'Yeni hasta seçilirse pet listesine de kaydedilir.'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  if (useRegisteredPet)
+                    DropdownButtonFormField<Map<String, dynamic>>(
+                      value: selectedPet,
+                      isExpanded: true,
+                      decoration:
+                          const InputDecoration(labelText: 'Kayıtlı pet'),
+                      items: pets
+                          .map((item) => DropdownMenuItem(
+                                value: item,
+                                child: Text(
+                                  '${item['name']} • ${item['owner'] ?? '-'}',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (value) =>
+                          setDialogState(() => selectedPet = value),
+                    )
+                  else ...[
+                    TextField(
+                      controller: petName,
+                      decoration:
+                          const InputDecoration(labelText: 'Hasta / pet adı'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: species,
+                      decoration: const InputDecoration(labelText: 'Tür'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: breed,
+                      decoration: const InputDecoration(labelText: 'Irk'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: owner,
+                      decoration: const InputDecoration(labelText: 'Sahip adı'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: phone,
+                      decoration: const InputDecoration(labelText: 'Telefon'),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: room,
+                    decoration: const InputDecoration(labelText: 'Oda / kafes'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: diagnosis,
+                    decoration:
+                        const InputDecoration(labelText: 'Tanı / yatış nedeni'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: treatment,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration:
+                        const InputDecoration(labelText: 'Uygulanacak tedavi'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: notes,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration:
+                        const InputDecoration(labelText: 'Veteriner notu'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Vazgeç')),
+            FilledButton(
+              onPressed: () async {
+                if ((useRegisteredPet && selectedPet == null) ||
+                    (!useRegisteredPet && petName.text.trim().isEmpty) ||
+                    diagnosis.text.trim().isEmpty ||
+                    treatment.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content:
+                          Text('Pet, tanı/yatış nedeni ve tedavi zorunlu.'),
+                    ),
+                  );
+                  return;
+                }
+                try {
+                  await widget.api.request(
+                    AppConstants.hospitalizationsEndpoint,
+                    method: 'POST',
+                    body: {
+                      if (useRegisteredPet)
+                        'pet_record_key': selectedPet!['record_key'],
+                      if (!useRegisteredPet) 'pet_name': petName.text.trim(),
+                      if (!useRegisteredPet) 'species': species.text.trim(),
+                      if (!useRegisteredPet) 'breed': breed.text.trim(),
+                      if (!useRegisteredPet) 'owner_name': owner.text.trim(),
+                      if (!useRegisteredPet) 'phone': phone.text.trim(),
+                      'room': room.text.trim(),
+                      'diagnosis': diagnosis.text.trim(),
+                      'treatment': treatment.text.trim(),
+                      'notes': notes.text.trim(),
+                      'add_to_pets': true,
+                    },
+                  );
+                  if (!mounted) return;
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Hasta yatışı kaydedildi.')),
+                  );
+                  reload();
+                } catch (error) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Yatış kaydedilemedi: $error')),
+                  );
+                }
+              },
+              child: const Text('Yatış Yap'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> showHospitalDetail(Map<String, dynamic> item) async {
+    await showDialog(
+      context: context,
+      builder: (_) => HospitalApiDetailDialog(
+        api: widget.api,
+        record: item,
+        onChanged: reload,
+      ),
+    );
+  }
+}
+
+class HospitalApiDetailDialog extends StatefulWidget {
+  const HospitalApiDetailDialog({
+    super.key,
+    required this.api,
+    required this.record,
+    required this.onChanged,
+  });
+
+  final ApiClient api;
+  final Map<String, dynamic> record;
+  final VoidCallback onChanged;
+
+  @override
+  State<HospitalApiDetailDialog> createState() =>
+      _HospitalApiDetailDialogState();
+}
+
+class _HospitalApiDetailDialogState extends State<HospitalApiDetailDialog> {
+  late Map<String, dynamic> record = Map.of(widget.record);
+  late final room = TextEditingController(text: '${record['room'] ?? ''}');
+  late final diagnosis =
+      TextEditingController(text: '${record['diagnosis'] ?? ''}');
+  late final treatment =
+      TextEditingController(text: '${record['treatment'] ?? ''}');
+  late final notes = TextEditingController(text: '${record['notes'] ?? ''}');
+  bool saving = false;
+
+  Future<void> updateRecord() async {
+    setState(() => saving = true);
+    try {
+      final result = await widget.api.request(
+        '${AppConstants.hospitalizationsEndpoint}/${record['id']}',
+        method: 'PATCH',
+        body: {
+          'room': room.text.trim(),
+          'diagnosis': diagnosis.text.trim(),
+          'treatment': treatment.text.trim(),
+          'notes': notes.text.trim(),
+        },
+      );
+      setState(() {
+        record = Map<String, dynamic>.from(result['data'] as Map);
+        saving = false;
+      });
+      widget.onChanged();
+    } catch (error) {
+      setState(() => saving = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kayıt güncellenemedi: $error')),
+      );
+    }
+  }
+
+  Future<void> discharge() async {
+    setState(() => saving = true);
+    try {
+      final result = await widget.api.request(
+        '${AppConstants.hospitalizationsEndpoint}/${record['id']}/discharge',
+        method: 'POST',
+      );
+      setState(() {
+        record = Map<String, dynamic>.from(result['data'] as Map);
+        saving = false;
+      });
+      widget.onChanged();
+    } catch (error) {
+      setState(() => saving = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Hasta taburcu edilemedi: $error')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final previous = (record['previous_stays'] as List? ?? [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    final active = record['status'] == 'active';
+    return AlertDialog(
+      title: Text('${record['pet_name']} • ${active ? 'Yatıyor' : 'Taburcu'}'),
+      content: SizedBox(
+        width: 660,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  PetInfoTile(
+                      label: 'Sahip', value: '${record['owner_name'] ?? '-'}'),
+                  PetInfoTile(
+                      label: 'Telefon', value: '${record['phone'] ?? '-'}'),
+                  PetInfoTile(
+                      label: 'Yatış', value: '${record['admitted_at'] ?? '-'}'),
+                  if (!active)
+                    PetInfoTile(
+                      label: 'Taburcu',
+                      value: '${record['discharged_at'] ?? '-'}',
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: room,
+                enabled: active,
+                decoration: const InputDecoration(labelText: 'Oda / kafes'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: diagnosis,
+                enabled: active,
+                decoration:
+                    const InputDecoration(labelText: 'Tanı / yatış nedeni'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: treatment,
+                enabled: active,
+                minLines: 2,
+                maxLines: 5,
+                decoration:
+                    const InputDecoration(labelText: 'Uygulanan tedavi'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: notes,
+                enabled: active,
+                minLines: 2,
+                maxLines: 5,
+                decoration: const InputDecoration(labelText: 'Veteriner notu'),
+              ),
+              const SizedBox(height: 18),
+              const Text('Önceki Yatışlar',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              if (previous.isEmpty)
+                Text('Daha önce kayıtlı yatış bulunmuyor.',
+                    style: TextStyle(color: appMuted(context)))
+              else
+                for (final history in previous)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.history),
+                    title: Text('${history['diagnosis']}'),
+                    subtitle: Text(
+                      '${history['admitted_at']} - ${history['discharged_at'] ?? '-'}',
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: saving ? null : () => Navigator.pop(context),
+          child: const Text('Kapat'),
+        ),
+        if (active)
+          OutlinedButton.icon(
+            onPressed: saving ? null : discharge,
+            icon: const Icon(Icons.home_outlined),
+            label: const Text('Taburcu Et'),
+          ),
+        if (active)
+          FilledButton.icon(
+            onPressed: saving ? null : updateRecord,
+            icon: const Icon(Icons.save_outlined),
+            label: Text(saving ? 'Kaydediliyor...' : 'Kaydet'),
+          ),
+      ],
+    );
+  }
+}
+
+class HospitalizedPage extends StatefulWidget {
+  const HospitalizedPage({
+    super.key,
+    required this.api,
+    required this.query,
+  });
+
+  final ApiClient api;
   final String query;
 
   @override
@@ -2644,6 +3378,7 @@ class CrudListPage extends StatefulWidget {
 class _CrudListPageState extends State<CrudListPage> {
   late Future<Map<String, dynamic>> future;
   String localQuery = '';
+  String stockFilter = 'all';
 
   @override
   void initState() {
@@ -2751,6 +3486,67 @@ class _CrudListPageState extends State<CrudListPage> {
             ),
           ),
         ),
+        if (widget.loadPath == AppConstants.productsEndpoint)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(28, 0, 28, 12),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 210,
+                  child: DropdownButtonFormField<String>(
+                    value: stockFilter,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Stok filtresi',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'all', child: Text('Tüm stoklar')),
+                      DropdownMenuItem(value: 'out', child: Text('Stok bitti')),
+                      DropdownMenuItem(
+                          value: 'low', child: Text('Kritik (1-5)')),
+                      DropdownMenuItem(
+                          value: 'available', child: Text('Yeterli (6+)')),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => stockFilter = value ?? 'all'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FutureBuilder<Map<String, dynamic>>(
+                    future: future,
+                    builder: (context, snapshot) {
+                      final rows = (snapshot.data?['data'] as List? ?? [])
+                          .whereType<Map>()
+                          .toList();
+                      final totalStock = rows.fold<int>(
+                        0,
+                        (sum, item) =>
+                            sum + (int.tryParse('${item['stock']}') ?? 0),
+                      );
+                      final low = rows.where((item) {
+                        final stock = int.tryParse('${item['stock']}') ?? 0;
+                        return stock > 0 && stock <= 5;
+                      }).length;
+                      final out = rows
+                          .where((item) =>
+                              (int.tryParse('${item['stock']}') ?? 0) <= 0)
+                          .length;
+                      return Wrap(
+                        spacing: 8,
+                        children: [
+                          Chip(label: Text('Toplam adet: $totalStock')),
+                          Chip(label: Text('Kritik: $low ürün')),
+                          Chip(label: Text('Tükenen: $out ürün')),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
         Expanded(
           child: FutureBuilder<Map<String, dynamic>>(
             future: future,
@@ -2763,15 +3559,21 @@ class _CrudListPageState extends State<CrudListPage> {
                 return const Center(child: CircularProgressIndicator());
               final allRows = snapshot.data!['data'] as List;
               final q = '${widget.query} $localQuery'.trim().toLowerCase();
-              final rows = q.isEmpty
-                  ? allRows
-                  : allRows
-                      .where((item) => (item as Map<String, dynamic>)
-                          .values
-                          .join(' ')
-                          .toLowerCase()
-                          .contains(q))
-                      .toList();
+              final rows = allRows.where((raw) {
+                final item = raw as Map<String, dynamic>;
+                final searchText =
+                    '${item['name'] ?? ''} ${item['category'] ?? ''}'
+                        .toLowerCase();
+                if (q.isNotEmpty && !searchText.contains(q)) return false;
+                if (widget.loadPath != AppConstants.productsEndpoint) {
+                  return true;
+                }
+                final stock = int.tryParse('${item['stock']}') ?? 0;
+                if (stockFilter == 'out') return stock <= 0;
+                if (stockFilter == 'low') return stock > 0 && stock <= 5;
+                if (stockFilter == 'available') return stock > 5;
+                return true;
+              }).toList();
               return ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 28),
                 itemCount: rows.length,
@@ -2784,9 +3586,32 @@ class _CrudListPageState extends State<CrudListPage> {
                       title: Text(item['name']?.toString() ?? '-',
                           style: const TextStyle(fontWeight: FontWeight.w800)),
                       subtitle: Text(
-                          '${item['category'] ?? 'Genel'} • ₺${item['price'] ?? 0}'),
+                        '${item['category'] ?? 'Genel'} • ₺${item['price'] ?? 0}'
+                        '${widget.loadPath == AppConstants.productsEndpoint ? ' • Stok: ${item['stock'] ?? 0}' : ''}',
+                      ),
                       trailing: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
+                          if (widget.loadPath == AppConstants.productsEndpoint)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: Builder(builder: (context) {
+                                final stock =
+                                    int.tryParse('${item['stock']}') ?? 0;
+                                return Chip(
+                                  label: Text(stock <= 0
+                                      ? 'Stok bitti'
+                                      : stock <= 5
+                                          ? 'Kritik'
+                                          : 'Yeterli'),
+                                  backgroundColor: stock <= 0
+                                      ? Colors.red.withOpacity(.12)
+                                      : stock <= 5
+                                          ? Colors.orange.withOpacity(.14)
+                                          : Colors.green.withOpacity(.12),
+                                );
+                              }),
+                            ),
                           IconButton(
                               icon: const Icon(Icons.edit_outlined),
                               onPressed: () => save(item: item)),
@@ -2878,11 +3703,9 @@ class _OrdersPageState extends State<OrdersPage> {
     final mail =
         result['data'] is Map ? (result['data']['mail'] as Map?) : null;
     if (!mounted) return;
-    final extra = status == 'shipped'
-        ? (mail == null
-            ? ' Mail ayarı yoksa gönderim atlanır.'
-            : ' Mail: ${mail['message']}')
-        : '';
+    final extra = mail == null
+        ? ' Bildirim e-postası gönderilmedi.'
+        : ' E-posta: ${mail['message']}';
     ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Sipariş durumu güncellendi.$extra')));
     reload();
@@ -3463,6 +4286,9 @@ class _UserManagementPageState extends State<UserManagementPage> {
   late final Timer _refreshTimer;
   late Future<Map<String, dynamic>> future =
       widget.api.request(AppConstants.usersEndpoint);
+  String localQuery = '';
+  String searchField = 'all';
+  String memberFilter = 'all';
 
   @override
   void initState() {
@@ -3527,6 +4353,58 @@ class _UserManagementPageState extends State<UserManagementPage> {
             icon: const Icon(Icons.refresh),
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 0, 28, 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  onChanged: (value) => setState(() => localQuery = value),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText: 'Üye ara...',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 150,
+                child: DropdownButtonFormField<String>(
+                  value: searchField,
+                  decoration: const InputDecoration(
+                      isDense: true, labelText: 'Arama alanı'),
+                  items: const [
+                    DropdownMenuItem(value: 'all', child: Text('Tüm alanlar')),
+                    DropdownMenuItem(value: 'name', child: Text('Ad soyad')),
+                    DropdownMenuItem(value: 'email', child: Text('E-posta')),
+                    DropdownMenuItem(value: 'phone', child: Text('Telefon')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => searchField = value ?? 'all'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 150,
+                child: DropdownButtonFormField<String>(
+                  value: memberFilter,
+                  decoration:
+                      const InputDecoration(isDense: true, labelText: 'Filtre'),
+                  items: const [
+                    DropdownMenuItem(value: 'all', child: Text('Tüm üyeler')),
+                    DropdownMenuItem(value: 'active', child: Text('Aktif')),
+                    DropdownMenuItem(value: 'banned', child: Text('Banlı')),
+                    DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                    DropdownMenuItem(value: 'member', child: Text('Üye')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => memberFilter = value ?? 'all'),
+                ),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: FutureBuilder<Map<String, dynamic>>(
             future: future,
@@ -3538,16 +4416,25 @@ class _UserManagementPageState extends State<UserManagementPage> {
               if (!snapshot.hasData)
                 return const Center(child: CircularProgressIndicator());
               final allUsers = snapshot.data!['data'] as List;
-              final q = widget.query.trim().toLowerCase();
-              final users = q.isEmpty
-                  ? allUsers
-                  : allUsers
-                      .where((item) => (item as Map<String, dynamic>)
-                          .values
-                          .join(' ')
-                          .toLowerCase()
-                          .contains(q))
-                      .toList();
+              final q = '${widget.query} $localQuery'.trim().toLowerCase();
+              final users = allUsers.where((raw) {
+                final user = raw as Map<String, dynamic>;
+                final fieldValue = switch (searchField) {
+                  'name' => '${user['full_name'] ?? ''}',
+                  'email' => '${user['email'] ?? ''}',
+                  'phone' => '${user['phone'] ?? ''}',
+                  _ =>
+                    '${user['full_name'] ?? ''} ${user['email'] ?? ''} ${user['phone'] ?? ''}',
+                };
+                if (q.isNotEmpty && !fieldValue.toLowerCase().contains(q)) {
+                  return false;
+                }
+                if (memberFilter == 'active') return user['is_banned'] != 1;
+                if (memberFilter == 'banned') return user['is_banned'] == 1;
+                if (memberFilter == 'admin') return user['role'] == 'admin';
+                if (memberFilter == 'member') return user['role'] != 'admin';
+                return true;
+              }).toList();
               if (users.isEmpty)
                 return const Center(child: Text('Henüz üye yok.'));
               return ListView.builder(
@@ -3827,7 +4714,7 @@ class _AppointmentSlotsPageState extends State<AppointmentSlotsPage> {
                                 Text(
                                   taken
                                       ? 'Dolu'
-                                      : (blocked ? 'Kapalı' : 'Uygün'),
+                                      : (blocked ? 'Kapalı' : 'Uygun'),
                                   style: TextStyle(
                                       color: color,
                                       fontWeight: FontWeight.w700),
@@ -4175,7 +5062,17 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
 
 class PetRecord {
   const PetRecord(
-      this.name, this.tag, this.type, this.breed, this.owner, this.phone);
+    this.name,
+    this.tag,
+    this.type,
+    this.breed,
+    this.owner,
+    this.phone, {
+    this.id,
+    this.userId,
+    this.appointmentId,
+    this.source = 'local',
+  });
 
   final String name;
   final String tag;
@@ -4183,6 +5080,10 @@ class PetRecord {
   final String breed;
   final String owner;
   final String phone;
+  final int? id;
+  final int? userId;
+  final int? appointmentId;
+  final String source;
 }
 
 class HospitalRecord {

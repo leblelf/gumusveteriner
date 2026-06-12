@@ -347,6 +347,46 @@ def init_db() -> None:
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS clinic_pets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                appointment_id INTEGER,
+                name TEXT NOT NULL,
+                species TEXT NOT NULL,
+                breed TEXT,
+                age TEXT,
+                owner_name TEXT,
+                phone TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id),
+                FOREIGN KEY(appointment_id) REFERENCES appointments(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS hospitalizations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pet_id INTEGER,
+                clinic_pet_id INTEGER,
+                appointment_id INTEGER,
+                user_id INTEGER,
+                pet_name TEXT NOT NULL,
+                species TEXT,
+                owner_name TEXT,
+                phone TEXT,
+                room TEXT,
+                diagnosis TEXT NOT NULL,
+                treatment TEXT NOT NULL,
+                notes TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                admitted_at TEXT NOT NULL,
+                discharged_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(pet_id) REFERENCES pets(id),
+                FOREIGN KEY(clinic_pet_id) REFERENCES clinic_pets(id),
+                FOREIGN KEY(appointment_id) REFERENCES appointments(id),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
             CREATE TABLE IF NOT EXISTS pet_health_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 pet_id INTEGER NOT NULL,
@@ -461,6 +501,7 @@ def init_db() -> None:
         ensure_column(db, "orders", "user_id", "INTEGER")
         ensure_column(db, "appointments", "user_id", "INTEGER")
         ensure_column(db, "appointments", "pet_id", "INTEGER")
+        ensure_column(db, "appointments", "clinic_pet_id", "INTEGER")
         ensure_column(db, "orders", "payment_last4", "TEXT")
         ensure_column(db, "orders", "payment_status", "TEXT")
         ensure_column(db, "contacts", "reply", "TEXT")
@@ -1032,13 +1073,22 @@ def order_with_items(db: sqlite3.Connection, order_id: int) -> dict | None:
 
 
 def send_order_status_email(order: dict, status: str) -> EmailResult | None:
-    if status != "shipped":
+    if not order.get("email"):
         return None
-    subject = f"Gümüş Veteriner siparişiniz kargoya verildi - #{order['id']}"
+    status_text = {
+        "confirmed": "onaylandı ve hazırlanıyor",
+        "shipped": "kargoya verildi",
+        "delivered": "teslim edildi",
+        "cancelled": "iptal edildi",
+    }.get(status)
+    if not status_text:
+        return None
+    subject = f"Gümüş Veteriner siparişiniz {status_text} - #{order['id']}"
     body = (
         f"Merhaba {order.get('first_name', '')},\n\n"
-        f"#{order['id']} numaralı siparişiniz kargoya verildi.\n"
-        "Teslimat sürecinde adresinizi kontrol etmeyi unutmayın.\n\n"
+        f"#{order['id']} numaralı siparişiniz {status_text}.\n"
+        + ("Kargonuz teslimat sürecine alınmıştır.\n" if status == "shipped" else "")
+        + "\n"
         "Gümüş Veteriner Muayenehanesi\n"
         "0546 136 14 33"
     )
@@ -2883,8 +2933,12 @@ def api_admin_pets():
             """
             SELECT
                 'profile-' || CAST(pets.id AS TEXT) AS record_key,
+                pets.id,
+                pets.user_id,
+                NULL AS appointment_id,
                 pets.name,
                 pets.species,
+                '' AS breed,
                 COALESCE(pets.age, '') AS age,
                 COALESCE(pets.notes, '') AS notes,
                 COALESCE(users.full_name, '') AS owner,
@@ -2896,12 +2950,37 @@ def api_admin_pets():
             ORDER BY pets.id DESC
             """
         ).fetchall()
+        clinic_pets = db.execute(
+            """
+            SELECT
+                'clinic-' || CAST(clinic_pets.id AS TEXT) AS record_key,
+                clinic_pets.id,
+                clinic_pets.user_id,
+                clinic_pets.appointment_id,
+                clinic_pets.name,
+                clinic_pets.species,
+                COALESCE(clinic_pets.breed, '') AS breed,
+                COALESCE(clinic_pets.age, '') AS age,
+                COALESCE(clinic_pets.notes, '') AS notes,
+                COALESCE(clinic_pets.owner_name, users.full_name, '') AS owner,
+                COALESCE(clinic_pets.phone, users.phone, '') AS phone,
+                'clinic' AS source,
+                clinic_pets.created_at
+            FROM clinic_pets
+            LEFT JOIN users ON users.id = clinic_pets.user_id
+            ORDER BY clinic_pets.id DESC
+            """
+        ).fetchall()
         appointment_pets = db.execute(
             """
             SELECT
                 'appointment-' || CAST(MAX(appointments.id) AS TEXT) AS record_key,
+                MAX(appointments.id) AS id,
+                MAX(appointments.user_id) AS user_id,
+                MAX(appointments.id) AS appointment_id,
                 appointments.pet_name AS name,
                 appointments.pet_type AS species,
+                '' AS breed,
                 '' AS age,
                 'Randevu ekranından eklendi' AS notes,
                 TRIM(appointments.first_name || ' ' || appointments.last_name) AS owner,
@@ -2911,6 +2990,10 @@ def api_admin_pets():
             FROM appointments
             WHERE appointments.pet_id IS NULL
               AND COALESCE(TRIM(appointments.pet_name), '') <> ''
+              AND NOT EXISTS (
+                  SELECT 1 FROM clinic_pets
+                  WHERE clinic_pets.appointment_id = appointments.id
+              )
               AND NOT EXISTS (
                   SELECT 1
                   FROM pets
@@ -2931,8 +3014,421 @@ def api_admin_pets():
             """
         ).fetchall()
     rows = [row_to_dict(row) for row in profile_pets]
+    rows.extend(row_to_dict(row) for row in clinic_pets)
     rows.extend(row_to_dict(row) for row in appointment_pets)
     return api_response(True, "Petler listelendi", rows)
+
+
+def register_appointment_pet(db, appointment_id: int) -> dict:
+    """Randevudaki peti üye profiline veya klinik pet listesine kaydeder."""
+    appointment = db.execute(
+        "SELECT * FROM appointments WHERE id = ?",
+        (appointment_id,),
+    ).fetchone()
+    if not appointment:
+        raise ValueError("Randevu bulunamadı")
+    if not (appointment["pet_name"] or "").strip():
+        raise ValueError("Randevuda pet adı bulunmuyor")
+    if appointment["pet_id"]:
+        pet = db.execute("SELECT * FROM pets WHERE id = ?", (appointment["pet_id"],)).fetchone()
+        return {"source": "profile", **row_to_dict(pet)}
+    if "clinic_pet_id" in appointment.keys() and appointment["clinic_pet_id"]:
+        pet = db.execute(
+            "SELECT * FROM clinic_pets WHERE id = ?",
+            (appointment["clinic_pet_id"],),
+        ).fetchone()
+        return {"source": "clinic", **row_to_dict(pet)}
+
+    now = datetime.now().isoformat(timespec="seconds")
+    if appointment["user_id"]:
+        existing = db.execute(
+            """
+            SELECT * FROM pets
+            WHERE user_id = ? AND LOWER(name) = LOWER(?) AND LOWER(species) = LOWER(?)
+            """,
+            (appointment["user_id"], appointment["pet_name"], appointment["pet_type"]),
+        ).fetchone()
+        if existing:
+            pet_id = existing["id"]
+            pet = existing
+        else:
+            pet_id = db.execute(
+                """
+                INSERT INTO pets (user_id, name, species, age, notes, created_at)
+                VALUES (?, ?, ?, '', 'Randevu kaydından admin tarafından eklendi', ?)
+                """,
+                (
+                    appointment["user_id"],
+                    appointment["pet_name"].strip(),
+                    appointment["pet_type"].strip(),
+                    now,
+                ),
+            ).lastrowid
+            pet = db.execute("SELECT * FROM pets WHERE id = ?", (pet_id,)).fetchone()
+        db.execute(
+            "UPDATE appointments SET pet_id = ?, clinic_pet_id = NULL WHERE id = ?",
+            (pet_id, appointment_id),
+        )
+        return {"source": "profile", **row_to_dict(pet)}
+
+    clinic_pet_id = db.execute(
+        """
+        INSERT INTO clinic_pets
+        (appointment_id, name, species, breed, age, owner_name, phone, notes, created_at)
+        VALUES (?, ?, ?, '', '', ?, ?, 'Randevu kaydından admin tarafından eklendi', ?)
+        """,
+        (
+            appointment_id,
+            appointment["pet_name"].strip(),
+            appointment["pet_type"].strip(),
+            f"{appointment['first_name']} {appointment['last_name']}".strip(),
+            appointment["phone"],
+            now,
+        ),
+    ).lastrowid
+    db.execute(
+        "UPDATE appointments SET clinic_pet_id = ? WHERE id = ?",
+        (clinic_pet_id, appointment_id),
+    )
+    pet = db.execute("SELECT * FROM clinic_pets WHERE id = ?", (clinic_pet_id,)).fetchone()
+    return {"source": "clinic", **row_to_dict(pet)}
+
+
+@app.route("/api/admin/appointments/<int:appointment_id>/add-pet", methods=["POST"])
+@require_admin_api
+def api_admin_appointment_add_pet(appointment_id: int):
+    try:
+        with connect() as db:
+            pet = register_appointment_pet(db, appointment_id)
+            db.commit()
+    except ValueError as exc:
+        return api_response(False, str(exc), None, HTTPStatus.BAD_REQUEST)
+    log_admin_action("appointment_pet_add", "appointment", appointment_id)
+    return api_response(True, "Pet, pet listesine eklendi", pet, HTTPStatus.CREATED)
+
+
+def hospitalization_payload(db, row) -> dict:
+    item = row_to_dict(row)
+    previous = db.execute(
+        """
+        SELECT diagnosis, admitted_at, discharged_at
+        FROM hospitalizations
+        WHERE id <> ?
+          AND status = 'discharged'
+          AND (
+                (pet_id IS NOT NULL AND pet_id = ?)
+             OR (clinic_pet_id IS NOT NULL AND clinic_pet_id = ?)
+             OR (
+                  pet_id IS NULL
+                  AND clinic_pet_id IS NULL
+                  AND LOWER(pet_name) = LOWER(?)
+                  AND COALESCE(phone, '') = COALESCE(?, '')
+                )
+          )
+        ORDER BY admitted_at DESC
+        """,
+        (
+            row["id"],
+            row["pet_id"],
+            row["clinic_pet_id"],
+            row["pet_name"],
+            row["phone"],
+        ),
+    ).fetchall()
+    item["previous_stays"] = [row_to_dict(history) for history in previous]
+    return item
+
+
+@app.route("/api/admin/hospitalizations", methods=["GET", "POST"])
+@require_admin_api
+def api_admin_hospitalizations():
+    if request.method == "GET":
+        with connect() as db:
+            rows = db.execute(
+                "SELECT * FROM hospitalizations ORDER BY status = 'active' DESC, admitted_at DESC"
+            ).fetchall()
+            data = [hospitalization_payload(db, row) for row in rows]
+        return api_response(True, "Yatan hastalar listelendi", data)
+
+    data = request.get_json(silent=True) or {}
+    record_key = (data.get("pet_record_key") or "").strip()
+    pet_name = (data.get("pet_name") or "").strip()
+    species = (data.get("species") or "Belirtilmedi").strip()
+    owner_name = (data.get("owner_name") or "").strip()
+    phone = (data.get("phone") or "").strip()
+    diagnosis = (data.get("diagnosis") or "").strip()
+    treatment = (data.get("treatment") or "").strip()
+    room = (data.get("room") or "Oda belirtilmedi").strip()
+    notes = (data.get("notes") or "").strip()
+    if (not pet_name and not record_key) or not diagnosis or not treatment:
+        return api_response(
+            False,
+            "Pet adı, tanı/yatış nedeni ve tedavi zorunlu",
+            None,
+            HTTPStatus.BAD_REQUEST,
+        )
+
+    pet_id = clinic_pet_id = appointment_id = user_id = None
+    now = datetime.now().isoformat(timespec="seconds")
+    with connect() as db:
+        if record_key.startswith("profile-"):
+            pet_id = int(record_key.removeprefix("profile-"))
+            pet = db.execute(
+                """
+                SELECT pets.*, users.full_name AS owner_name, users.phone
+                FROM pets JOIN users ON users.id = pets.user_id
+                WHERE pets.id = ?
+                """,
+                (pet_id,),
+            ).fetchone()
+            if not pet:
+                return api_response(False, "Kayıtlı pet bulunamadı", None, HTTPStatus.NOT_FOUND)
+            user_id = pet["user_id"]
+            pet_name, species = pet["name"], pet["species"]
+            owner_name, phone = pet["owner_name"], pet["phone"]
+        elif record_key.startswith("clinic-"):
+            clinic_pet_id = int(record_key.removeprefix("clinic-"))
+            pet = db.execute("SELECT * FROM clinic_pets WHERE id = ?", (clinic_pet_id,)).fetchone()
+            if not pet:
+                return api_response(False, "Klinik pet kaydı bulunamadı", None, HTTPStatus.NOT_FOUND)
+            user_id = pet["user_id"]
+            appointment_id = pet["appointment_id"]
+            pet_name, species = pet["name"], pet["species"]
+            owner_name, phone = pet["owner_name"], pet["phone"]
+        elif record_key.startswith("appointment-"):
+            appointment_id = int(record_key.removeprefix("appointment-"))
+            pet = register_appointment_pet(db, appointment_id)
+            if pet["source"] == "profile":
+                pet_id, user_id = pet["id"], pet["user_id"]
+            else:
+                clinic_pet_id, user_id = pet["id"], pet.get("user_id")
+            pet_name, species = pet["name"], pet["species"]
+            owner_name = pet.get("owner_name") or owner_name
+            phone = pet.get("phone") or phone
+        elif data.get("add_to_pets", True):
+            clinic_pet_id = db.execute(
+                """
+                INSERT INTO clinic_pets
+                (name, species, breed, age, owner_name, phone, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    pet_name,
+                    species,
+                    (data.get("breed") or "").strip(),
+                    (data.get("age") or "").strip(),
+                    owner_name,
+                    phone,
+                    "Hasta yatışı sırasında eklendi",
+                    now,
+                ),
+            ).lastrowid
+
+        hospitalization_id = db.execute(
+            """
+            INSERT INTO hospitalizations
+            (pet_id, clinic_pet_id, appointment_id, user_id, pet_name, species,
+             owner_name, phone, room, diagnosis, treatment, notes, status,
+             admitted_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+            """,
+            (
+                pet_id,
+                clinic_pet_id,
+                appointment_id,
+                user_id,
+                pet_name,
+                species,
+                owner_name,
+                phone,
+                room,
+                diagnosis,
+                treatment,
+                notes,
+                data.get("admitted_at") or now,
+                now,
+            ),
+        ).lastrowid
+        db.commit()
+        row = db.execute("SELECT * FROM hospitalizations WHERE id = ?", (hospitalization_id,)).fetchone()
+        payload = hospitalization_payload(db, row)
+    log_admin_action("hospitalization_add", "hospitalization", hospitalization_id, pet_name)
+    return api_response(True, "Hasta yatışı kaydedildi", payload, HTTPStatus.CREATED)
+
+
+@app.route("/api/admin/hospitalizations/<int:hospitalization_id>", methods=["PATCH", "PUT"])
+@require_admin_api
+def api_admin_hospitalization_update(hospitalization_id: int):
+    data = request.get_json(silent=True) or {}
+    allowed = {"room", "diagnosis", "treatment", "notes", "owner_name", "phone"}
+    updates, params = [], []
+    for field in allowed:
+        if field in data:
+            updates.append(f"{field} = ?")
+            params.append((data.get(field) or "").strip())
+    if not updates:
+        return api_response(False, "Güncellenecek yatış bilgisi yok", None, HTTPStatus.BAD_REQUEST)
+    params.append(hospitalization_id)
+    with connect() as db:
+        db.execute(f"UPDATE hospitalizations SET {', '.join(updates)} WHERE id = ?", params)
+        db.commit()
+        row = db.execute("SELECT * FROM hospitalizations WHERE id = ?", (hospitalization_id,)).fetchone()
+        if not row:
+            return api_response(False, "Yatış kaydı bulunamadı", None, HTTPStatus.NOT_FOUND)
+        payload = hospitalization_payload(db, row)
+    log_admin_action("hospitalization_update", "hospitalization", hospitalization_id)
+    return api_response(True, "Yatış bilgileri güncellendi", payload)
+
+
+@app.route("/api/admin/hospitalizations/<int:hospitalization_id>/discharge", methods=["POST"])
+@require_admin_api
+def api_admin_hospitalization_discharge(hospitalization_id: int):
+    now = datetime.now().isoformat(timespec="seconds")
+    with connect() as db:
+        row = db.execute("SELECT * FROM hospitalizations WHERE id = ?", (hospitalization_id,)).fetchone()
+        if not row:
+            return api_response(False, "Yatış kaydı bulunamadı", None, HTTPStatus.NOT_FOUND)
+        if row["status"] != "discharged":
+            db.execute(
+                "UPDATE hospitalizations SET status = 'discharged', discharged_at = ? WHERE id = ?",
+                (now, hospitalization_id),
+            )
+            if row["pet_id"] and row["user_id"]:
+                db.execute(
+                    """
+                    INSERT INTO pet_health_records
+                    (pet_id, user_id, record_type, title, details, record_date, created_at)
+                    VALUES (?, ?, 'Yatış', ?, ?, ?, ?)
+                    """,
+                    (
+                        row["pet_id"],
+                        row["user_id"],
+                        row["diagnosis"],
+                        f"Yatış tedavisi: {row['treatment']}\n{row['notes'] or ''}".strip(),
+                        date.today().isoformat(),
+                        now,
+                    ),
+                )
+        db.commit()
+        updated = db.execute("SELECT * FROM hospitalizations WHERE id = ?", (hospitalization_id,)).fetchone()
+        payload = hospitalization_payload(db, updated)
+    log_admin_action("hospitalization_discharge", "hospitalization", hospitalization_id)
+    return api_response(True, "Hasta taburcu edildi", payload)
+
+
+@app.route("/api/admin/dashboard", methods=["GET"])
+@require_admin_api
+def api_admin_dashboard():
+    now = datetime.now()
+    month_keys = []
+    cursor = date(now.year, now.month, 1)
+    for _ in range(6):
+        month_keys.append(cursor.strftime("%Y-%m"))
+        cursor = (cursor.replace(day=1) - timedelta(days=1)).replace(day=1)
+    month_keys.reverse()
+    with connect() as db:
+        orders = db.execute(
+            "SELECT id, total, status, created_at FROM orders ORDER BY id DESC"
+        ).fetchall()
+        monthly = {key: 0.0 for key in month_keys}
+        for order in orders:
+            key = str(order["created_at"])[:7]
+            if key in monthly and order["status"] != "cancelled":
+                monthly[key] += float(order["total"] or 0)
+        best = db.execute(
+            """
+            SELECT products.id, products.name, SUM(order_items.quantity) AS quantity
+            FROM order_items
+            JOIN products ON products.id = order_items.product_id
+            JOIN orders ON orders.id = order_items.order_id
+            WHERE orders.status <> 'cancelled'
+            GROUP BY products.id, products.name
+            ORDER BY quantity DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        low_stock = db.execute(
+            "SELECT id, name, stock FROM products WHERE active = 1 AND stock <= 5 ORDER BY stock, name"
+        ).fetchall()
+        pending_orders = db.execute(
+            "SELECT id, first_name, last_name, total, created_at FROM orders WHERE status = 'pending' ORDER BY id DESC LIMIT 5"
+        ).fetchall()
+        pending_appointments = db.execute(
+            """
+            SELECT id, first_name, last_name, pet_name, appt_date, appt_time
+            FROM appointments WHERE status = 'pending'
+            ORDER BY appt_date, appt_time LIMIT 5
+            """
+        ).fetchall()
+        unanswered = first_column(db.execute(
+            "SELECT COUNT(*) FROM contacts WHERE COALESCE(reply, '') = ''"
+        ).fetchone())
+        total_pets = (
+            first_column(db.execute("SELECT COUNT(*) FROM pets").fetchone())
+            + first_column(db.execute("SELECT COUNT(*) FROM clinic_pets").fetchone())
+        )
+        active_hospitalizations = first_column(db.execute(
+            "SELECT COUNT(*) FROM hospitalizations WHERE status = 'active'"
+        ).fetchone())
+
+    current_total = monthly.get(now.strftime("%Y-%m"), 0.0)
+    previous_key = (date(now.year, now.month, 1) - timedelta(days=1)).strftime("%Y-%m")
+    previous_total = monthly.get(previous_key, 0.0)
+    sales_change = (
+        round(((current_total - previous_total) / previous_total) * 100, 1)
+        if previous_total > 0
+        else (100.0 if current_total > 0 else 0.0)
+    )
+    notifications = []
+    notifications.extend(
+        {
+            "kind": "order",
+            "title": f"Yeni sipariş #{row['id']}",
+            "message": f"{row['first_name']} {row['last_name']} • ₺{float(row['total']):.2f}",
+        }
+        for row in pending_orders
+    )
+    notifications.extend(
+        {
+            "kind": "appointment",
+            "title": f"Randevu #{row['id']}",
+            "message": f"{row['appt_date']} {row['appt_time']} • {row['pet_name'] or row['first_name']}",
+        }
+        for row in pending_appointments
+    )
+    notifications.extend(
+        {
+            "kind": "stock",
+            "title": "Stok uyarısı",
+            "message": f"{row['name']} • kalan {row['stock']}",
+        }
+        for row in low_stock
+    )
+    if unanswered:
+        notifications.append(
+            {
+                "kind": "contact",
+                "title": "Yanıt bekleyen sorular",
+                "message": f"{unanswered} müşteri mesajı yanıt bekliyor",
+            }
+        )
+    return api_response(
+        True,
+        "Dashboard verileri hazır",
+        {
+            "total_pets": total_pets,
+            "active_hospitalizations": active_hospitalizations,
+            "monthly_sales": [
+                {"month": key, "total": round(value, 2)}
+                for key, value in monthly.items()
+            ],
+            "current_month_sales": round(current_total, 2),
+            "sales_change_percent": sales_change,
+            "best_selling_product": row_to_dict(best) if best else None,
+            "low_stock": [row_to_dict(row) for row in low_stock],
+            "notifications": notifications[:15],
+        },
+    )
 
 
 @app.route("/api/admin/contacts", methods=["GET"])
@@ -3058,7 +3554,7 @@ def api_admin_orders_update(order_id: int):
                 )
         db.commit()
         order = order_with_items(db, order_id)
-    if order and status == "shipped" and before["status"] != "shipped":
+    if order and before["status"] != status:
         mail_result = send_order_status_email(order, status)
     data_payload = order or {}
     if mail_result:
@@ -3177,6 +3673,8 @@ def api_admin_products_add():
         stock = int(data.get("stock") or 0)
     except (TypeError, ValueError):
         return api_response(False, "Fiyat ve stok sayısal olmalı", None, HTTPStatus.BAD_REQUEST)
+    if price < 0 or stock < 0:
+        return api_response(False, "Fiyat ve stok negatif olamaz", None, HTTPStatus.BAD_REQUEST)
     with connect() as db:
         cursor = db.execute(
             "INSERT INTO products (name, category, price, stock, image_url, active) VALUES (?, ?, ?, ?, ?, ?)",
@@ -3192,6 +3690,15 @@ def api_admin_products_add():
 @require_admin_api
 def api_admin_products_update(product_id: int):
     data = request.get_json(silent=True) or {}
+    try:
+        if "price" in data:
+            data["price"] = float(data["price"])
+        if "stock" in data:
+            data["stock"] = int(data["stock"])
+    except (TypeError, ValueError):
+        return api_response(False, "Fiyat ve stok sayısal olmalı", None, HTTPStatus.BAD_REQUEST)
+    if data.get("price", 0) < 0 or data.get("stock", 0) < 0:
+        return api_response(False, "Fiyat ve stok negatif olamaz", None, HTTPStatus.BAD_REQUEST)
     allowed = {"name", "category", "price", "stock", "image_url", "active"}
     updates = []
     params = []
@@ -3286,7 +3793,18 @@ def api_admin_services_delete(service_id: int):
 @require_admin_api
 def api_admin_appointments():
     with connect() as db:
-        rows = db.execute("SELECT * FROM appointments ORDER BY created_at DESC").fetchall()
+        rows = db.execute(
+            """
+            SELECT appointments.*,
+                   CASE
+                     WHEN appointments.pet_id IS NOT NULL
+                       OR appointments.clinic_pet_id IS NOT NULL
+                     THEN 1 ELSE 0
+                   END AS pet_registered
+            FROM appointments
+            ORDER BY appointments.created_at DESC
+            """
+        ).fetchall()
     return api_response(True, "Randevular listelendi", [row_to_dict(row) for row in rows])
 
 

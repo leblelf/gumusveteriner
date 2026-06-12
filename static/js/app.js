@@ -309,10 +309,19 @@ async function markNotificationsRead(){
 let cart = {};  // {id: {product, qty}}
 
 // ── Sepet işlemleri ──────────────────────────────────────────────────────────
-function addCart(id,name,price,emoji){
+function addCart(id,name,price,emoji,stock){
   // Ürünü sepete ekler; zaten varsa miktarını 1 artırır.
-  if(cart[id]){cart[id].qty++;}
-  else{cart[id]={id,name,price,emoji,qty:1};}
+  const available=Number(stock || 0);
+  if(available<1){
+    toast('Bu ürünün stoğu bitti.');
+    return;
+  }
+  if(cart[id] && cart[id].qty>=available){
+    toast(`Stokta en fazla ${available} adet var.`);
+    return;
+  }
+  if(cart[id]){cart[id].qty++;cart[id].stock=available;}
+  else{cart[id]={id,name,price,emoji,stock:available,qty:1};}
   updateCartUI();
   showCartFlash();
 }
@@ -323,6 +332,10 @@ function removeCart(id){
 }
 function changeQty(id,delta){
   if(!cart[id])return;
+  if(delta>0 && cart[id].qty>=Number(cart[id].stock || 0)){
+    toast(`Stokta en fazla ${cart[id].stock} adet var.`);
+    return;
+  }
   cart[id].qty+=delta;
   if(cart[id].qty<=0)delete cart[id];
   updateCartUI();
@@ -355,7 +368,7 @@ function renderCartPanel(){
       <div class="qty-ctrl">
         <button class="qty-btn" onclick="changeQty(${i.id},-1)">−</button>
         <span class="qty-num">${i.qty}</span>
-        <button class="qty-btn" onclick="changeQty(${i.id},1)">+</button>
+        <button class="qty-btn" ${i.qty>=i.stock?'disabled':''} onclick="changeQty(${i.id},1)">+</button>
       </div>
       <button class="ci-del" onclick="removeCart(${i.id})">✕</button>
     </div>`).join('');
@@ -395,7 +408,7 @@ function renderOrderSummary(){
         <span class="order-line-total">₺${(i.price*i.qty).toLocaleString('tr-TR')}</span>
         <button class="qty-btn" type="button" onclick="changeQty(${i.id},-1)">−</button>
         <span class="qty-num">${i.qty}</span>
-        <button class="qty-btn" type="button" onclick="changeQty(${i.id},1)">+</button>
+        <button class="qty-btn" type="button" ${i.qty>=i.stock?'disabled':''} onclick="changeQty(${i.id},1)">+</button>
         <button class="ci-del order-del" type="button" onclick="removeCart(${i.id})">Sil</button>
       </div>
     </div>`).join('');
@@ -437,7 +450,7 @@ function renderHomeProducts(){
         <h3>${p.name}</h3>
         <div class="pc-footer">
           <span class="pc-price">₺${p.price.toLocaleString('tr-TR')}</span>
-          <button class="btn-add" ${p.stock<1?'disabled':''} onclick="addCart(${p.id},'${escAttr(p.name)}',${p.price},'')">${p.stock<1?'Tükendi':'+ Ekle'}</button>
+          <button class="btn-add" ${p.stock<1?'disabled':''} onclick="addCart(${p.id},'${escAttr(p.name)}',${p.price},'',${p.stock})">${p.stock<1?'Stok bitti':'+ Ekle'}</button>
         </div>
       </div>
     </div>`).join('');
@@ -453,8 +466,8 @@ function renderProducts(filter='all'){
         <h3>${p.name}</h3>
         <div class="pc-footer">
           <span class="pc-price">₺${p.price.toLocaleString('tr-TR')}</span>
-          <button class="btn-add" ${p.stock<1?'disabled':''} onclick="addCart(${p.id},'${escAttr(p.name)}',${p.price},'')">
-            ${p.stock<1?'Tükendi':'+ Ekle'}
+          <button class="btn-add" ${p.stock<1?'disabled':''} onclick="addCart(${p.id},'${escAttr(p.name)}',${p.price},'',${p.stock})">
+            ${p.stock<1?'Stok bitti':'+ Ekle'}
           </button>
         </div>
       </div>
@@ -473,6 +486,18 @@ async function loadProducts(){
     const data=await res.json();
     if(!res.ok){throw new Error(data.error || 'Ürünler yüklenemedi.');}
     PRODUCTS=data.map(normalizeProduct);
+    const productMap=new Map(PRODUCTS.map(product=>[String(product.id),product]));
+    Object.keys(cart).forEach(id=>{
+      const product=productMap.get(String(id));
+      if(!product || product.stock<1){
+        delete cart[id];
+        return;
+      }
+      cart[id].stock=product.stock;
+      cart[id].price=product.price;
+      if(cart[id].qty>product.stock)cart[id].qty=product.stock;
+    });
+    updateCartUI();
     renderCategoryPills();
     renderHomeProducts();
     renderProducts();

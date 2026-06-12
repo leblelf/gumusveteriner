@@ -52,10 +52,43 @@ CREATE TABLE IF NOT EXISTS pets (
     notes TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS clinic_pets (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    appointment_id INTEGER,
+    name TEXT NOT NULL,
+    species TEXT NOT NULL,
+    breed TEXT,
+    age TEXT,
+    owner_name TEXT,
+    phone TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hospitalizations (
+    id SERIAL PRIMARY KEY,
+    pet_id INTEGER REFERENCES pets(id) ON DELETE SET NULL,
+    clinic_pet_id INTEGER REFERENCES clinic_pets(id) ON DELETE SET NULL,
+    appointment_id INTEGER,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    pet_name TEXT NOT NULL,
+    species TEXT,
+    owner_name TEXT,
+    phone TEXT,
+    room TEXT,
+    diagnosis TEXT NOT NULL,
+    treatment TEXT NOT NULL,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    admitted_at TEXT NOT NULL,
+    discharged_at TEXT,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS appointments (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     pet_id INTEGER REFERENCES pets(id) ON DELETE SET NULL,
+    clinic_pet_id INTEGER REFERENCES clinic_pets(id) ON DELETE SET NULL,
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
     phone TEXT NOT NULL,
@@ -211,7 +244,8 @@ CREATE TABLE IF NOT EXISTS notifications (
 """
 
 SERIAL_TABLES = {
-    "users", "admins", "products", "pets", "appointments", "user_addresses",
+    "users", "admins", "products", "pets", "clinic_pets", "hospitalizations",
+    "appointments", "user_addresses",
     "pet_health_records", "appointment_reminders", "appointment_slots", "orders",
     "order_items", "contacts", "admin_login_attempts", "admin_audit_logs",
     "services", "site_reviews", "notifications",

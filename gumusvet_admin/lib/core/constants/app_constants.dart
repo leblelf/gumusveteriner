@@ -24,7 +24,10 @@ class AppConstants {
       '/api/admin/appointments/update';
   static const String appointmentsDeleteEndpoint =
       '/api/admin/appointments/delete';
+  static const String appointmentsAddPetEndpoint = '/api/admin/appointments';
   static const String appointmentSlotsEndpoint = '/api/admin/appointment-slots';
+  static const String hospitalizationsEndpoint = '/api/admin/hospitalizations';
+  static const String dashboardEndpoint = '/api/admin/dashboard';
   static const String reviewsEndpoint = '/api/admin/reviews';
   static const String reviewsUpdateEndpoint = '/api/admin/reviews/update';
   static const String reviewsDeleteEndpoint = '/api/admin/reviews/delete';
