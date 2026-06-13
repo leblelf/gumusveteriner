@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1074,12 +1075,15 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   final noteController = TextEditingController();
   List<String> notes = [];
+  Set<String> seenNotificationKeys = {};
+  List<Map<String, dynamic>> notificationHistory = [];
   late Future<List<Map<String, dynamic>>> dashboardFuture;
 
   @override
   void initState() {
     super.initState();
     _loadNotes();
+    _loadNotificationState();
     dashboardFuture = _loadDashboard();
   }
 
@@ -1150,6 +1154,136 @@ class _DashboardPageState extends State<DashboardPage> {
     await prefs.setStringList(AppConstants.quickNotesKey, notes);
   }
 
+  String _notificationKey(Map<String, dynamic> notification) {
+    return [
+      notification['kind'] ?? 'general',
+      notification['title'] ?? '',
+      notification['message'] ?? '',
+    ].join('|');
+  }
+
+  Future<void> _loadNotificationState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedKeys =
+        prefs.getStringList(AppConstants.seenNotificationKeysKey) ?? const [];
+    final savedHistory =
+        prefs.getStringList(AppConstants.notificationHistoryKey) ?? const [];
+    final history = <Map<String, dynamic>>[];
+
+    for (final item in savedHistory) {
+      try {
+        final decoded = jsonDecode(item);
+        if (decoded is Map) {
+          history.add(Map<String, dynamic>.from(decoded));
+        }
+      } catch (_) {
+        // Bozuk bir yerel kayıt diğer bildirimlerin açılmasını engellemez.
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      seenNotificationKeys = savedKeys.toSet();
+      notificationHistory = history;
+    });
+  }
+
+  Future<void> _markNotificationSeen(Map<String, dynamic> notification) async {
+    final key = _notificationKey(notification);
+    if (seenNotificationKeys.contains(key)) return;
+
+    final historyItem = <String, dynamic>{
+      ...notification,
+      'key': key,
+      'seen_at': DateTime.now().toIso8601String(),
+    };
+    setState(() {
+      seenNotificationKeys.add(key);
+      notificationHistory.insert(0, historyItem);
+      if (notificationHistory.length > 200) {
+        notificationHistory = notificationHistory.take(200).toList();
+      }
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      AppConstants.seenNotificationKeysKey,
+      seenNotificationKeys.toList(),
+    );
+    await prefs.setStringList(
+      AppConstants.notificationHistoryKey,
+      notificationHistory.map(jsonEncode).toList(),
+    );
+  }
+
+  void _showNotificationHistory() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.history_rounded),
+            SizedBox(width: 10),
+            Text('Geçmiş Bildirimler'),
+          ],
+        ),
+        content: SizedBox(
+          width: 560,
+          child: notificationHistory.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 28),
+                  child: Text(
+                    'Henüz geçmiş bildiriminiz yok.',
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: notificationHistory.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final item = notificationHistory[index];
+                    final seenAt = DateTime.tryParse('${item['seen_at'] ?? ''}')
+                        ?.toLocal();
+                    final dateText = seenAt == null
+                        ? ''
+                        : '${seenAt.day.toString().padLeft(2, '0')}.'
+                            '${seenAt.month.toString().padLeft(2, '0')}.'
+                            '${seenAt.year} '
+                            '${seenAt.hour.toString().padLeft(2, '0')}:'
+                            '${seenAt.minute.toString().padLeft(2, '0')}';
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 6,
+                      ),
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.done_all_rounded, size: 19),
+                      ),
+                      title: Text(
+                        '${item['title'] ?? 'Bildirim'}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      subtitle: Text(
+                        [
+                          '${item['message'] ?? ''}',
+                          if (dateText.isNotEmpty) 'Görüldü: $dateText',
+                        ].join('\n'),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Kapat'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void addNote() {
     final text = noteController.text.trim();
     if (text.isEmpty) return;
@@ -1189,6 +1323,21 @@ class _DashboardPageState extends State<DashboardPage> {
             .toList();
         final bestProduct =
             dashboard['best_selling_product'] as Map<String, dynamic>?;
+        final allNotifications = <Map<String, dynamic>>[
+          if (bestProduct != null)
+            {
+              'kind': 'best_product',
+              'title': 'En çok satan ürün',
+              'message':
+                  '${bestProduct['name']} • ${bestProduct['quantity']} adet',
+            },
+          ...notifications,
+        ];
+        final activeNotifications = allNotifications
+            .where(
+              (item) => !seenNotificationKeys.contains(_notificationKey(item)),
+            )
+            .toList();
         final today = DateTime.now().toIso8601String().split('T').first;
         final todayAppointments = data == null
             ? <Map<String, dynamic>>[]
@@ -1253,17 +1402,11 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: InfoPanel(
-                      title: 'Önemli Bildirimler',
-                      lines: [
-                        if (bestProduct != null)
-                          'En çok satan: ${bestProduct['name']} • ${bestProduct['quantity']} adet',
-                        ...notifications.map(
-                          (item) => '${item['title']}: ${item['message']}',
-                        ),
-                        if (bestProduct == null && notifications.isEmpty)
-                          'Şu anda önemli bir bildirim yok.',
-                      ],
+                    child: DashboardNotificationsCard(
+                      notifications: activeNotifications,
+                      historyCount: notificationHistory.length,
+                      onMarkSeen: _markNotificationSeen,
+                      onOpenHistory: _showNotificationHistory,
                     ),
                   ),
                 ],
@@ -1453,6 +1596,133 @@ class MonthlySalesCard extends StatelessWidget {
                       ],
                     ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class DashboardNotificationsCard extends StatelessWidget {
+  const DashboardNotificationsCard({
+    super.key,
+    required this.notifications,
+    required this.historyCount,
+    required this.onMarkSeen,
+    required this.onOpenHistory,
+  });
+
+  final List<Map<String, dynamic>> notifications;
+  final int historyCount;
+  final Future<void> Function(Map<String, dynamic>) onMarkSeen;
+  final VoidCallback onOpenHistory;
+
+  IconData _iconFor(String kind) {
+    switch (kind) {
+      case 'order':
+        return Icons.shopping_bag_outlined;
+      case 'appointment':
+        return Icons.calendar_month_outlined;
+      case 'stock':
+        return Icons.inventory_2_outlined;
+      case 'contact':
+        return Icons.mark_email_unread_outlined;
+      case 'best_product':
+        return Icons.trending_up_rounded;
+      default:
+        return Icons.notifications_none_rounded;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Önemli Bildirimler',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: onOpenHistory,
+                  icon: const Icon(Icons.history_rounded, size: 18),
+                  label: Text(
+                    historyCount == 0 ? 'Geçmiş' : 'Geçmiş ($historyCount)',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (notifications.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Row(
+                  children: [
+                    Icon(Icons.notifications_off_outlined),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text('Yeni veya görülmemiş bildirim yok.'),
+                    ),
+                  ],
+                ),
+              )
+            else
+              for (final notification in notifications)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withOpacity(.45),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            _iconFor('${notification['kind'] ?? ''}'),
+                            color: appOrange(context),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${notification['title'] ?? 'Bildirim'}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text('${notification['message'] ?? ''}'),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Tooltip(
+                            message: 'Görüldü olarak işaretle',
+                            child: IconButton(
+                              onPressed: () => onMarkSeen(notification),
+                              icon: const Icon(Icons.done_rounded),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
           ],
         ),
       ),

@@ -56,6 +56,8 @@ class AppConstants {
   static const String petViewModeKey = 'pet_view_mode';
   static const String hiddenAdminPetsKey = 'hidden_admin_pets';
   static const String quickNotesKey = 'quick_notes';
+  static const String seenNotificationKeysKey = 'seen_notification_keys';
+  static const String notificationHistoryKey = 'notification_history';
   static const String adminProfileNameKey = 'admin_profile_name';
   static const String adminProfilePhotoKey = 'admin_profile_photo';
 
