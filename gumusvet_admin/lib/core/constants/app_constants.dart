@@ -39,8 +39,11 @@ class AppConstants {
   static const String usersUpdateEndpoint = '/api/admin/users/update';
   static const String usersDeleteEndpoint = '/api/admin/users/delete';
   static const String petsEndpoint = '/api/admin/pets';
+  static const String petsAddEndpoint = '/api/admin/pets/add';
+  static const String petsDeleteEndpoint = '/api/admin/pets/delete';
   static const String ordersEndpoint = '/api/admin/orders';
   static const String ordersUpdateEndpoint = '/api/admin/orders/update';
+  static const String ordersDeleteEndpoint = '/api/admin/orders/delete';
   static const String sendSmsEndpoint = '/api/admin/send-sms';
   static const String adminProfileEndpoint = '/api/admin/profile';
   static const String forgotPasswordEndpoint = '/api/forgot-password';
@@ -50,6 +53,7 @@ class AppConstants {
   static const String savedUsernameKey = 'saved_username';
   static const String themeKey = 'app_theme';
   static const String petViewModeKey = 'pet_view_mode';
+  static const String hiddenAdminPetsKey = 'hidden_admin_pets';
   static const String quickNotesKey = 'quick_notes';
   static const String adminProfileNameKey = 'admin_profile_name';
   static const String adminProfilePhotoKey = 'admin_profile_photo';

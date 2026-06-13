@@ -216,6 +216,8 @@ def init_db() -> None:
                 appt_time TEXT NOT NULL,
                 notes TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
+                admin_hidden INTEGER NOT NULL DEFAULT 0,
+                admin_pet_hidden INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id),
                 FOREIGN KEY(pet_id) REFERENCES pets(id)
@@ -267,6 +269,7 @@ def init_db() -> None:
                 notes TEXT,
                 total REAL NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
+                admin_hidden INTEGER NOT NULL DEFAULT 0,
                 payment_last4 TEXT,
                 payment_status TEXT,
                 created_at TEXT NOT NULL
@@ -343,6 +346,7 @@ def init_db() -> None:
                 species TEXT NOT NULL,
                 age TEXT,
                 notes TEXT,
+                admin_hidden INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
@@ -358,6 +362,7 @@ def init_db() -> None:
                 owner_name TEXT,
                 phone TEXT,
                 notes TEXT,
+                admin_hidden INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id),
                 FOREIGN KEY(appointment_id) REFERENCES appointments(id)
@@ -505,6 +510,11 @@ def init_db() -> None:
         ensure_column(db, "appointments", "clinic_pet_id", "INTEGER")
         ensure_column(db, "orders", "payment_last4", "TEXT")
         ensure_column(db, "orders", "payment_status", "TEXT")
+        ensure_column(db, "orders", "admin_hidden", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "appointments", "admin_hidden", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "appointments", "admin_pet_hidden", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "pets", "admin_hidden", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(db, "clinic_pets", "admin_hidden", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(db, "contacts", "reply", "TEXT")
         ensure_column(db, "contacts", "replied_at", "TEXT")
         ensure_column(db, "site_reviews", "product_name", "TEXT")
@@ -1526,6 +1536,11 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                     """,
                     (user["id"],),
                 ).fetchall()
+                order_rows = db.execute(
+                    "SELECT id FROM orders WHERE user_id = ? ORDER BY created_at DESC",
+                    (user["id"],),
+                ).fetchall()
+                orders = [order_with_items(db, row["id"]) for row in order_rows]
             self.send_json(
                 {
                     "user": row_to_dict(user),
@@ -1533,6 +1548,7 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
                     "pets": pet_payload,
                     "appointments": [row_to_dict(row) for row in appointments],
                     "reviews": [row_to_dict(row) for row in reviews],
+                    "orders": [order for order in orders if order],
                 }
             )
             return
@@ -2388,7 +2404,12 @@ def api_logout():
         with connect() as db:
             db.execute("DELETE FROM sessions WHERE token = ?", (token,))
             db.commit()
+    # Çıkıştan sonra sayfa yenilenmeden yeniden giriş yapılabilmesi için
+    # tarayıcı formunun mevcut CSRF tokenını koruyoruz.
+    csrf_token = session.get("csrf_token")
     session.clear()
+    if csrf_token:
+        session["csrf_token"] = csrf_token
     return api_response(True, "Çıkış yapıldı", {})
 
 
@@ -3016,6 +3037,7 @@ def api_admin_pets():
                 pets.created_at
             FROM pets
             LEFT JOIN users ON users.id = pets.user_id
+            WHERE COALESCE(pets.admin_hidden, 0) = 0
             ORDER BY pets.id DESC
             """
         ).fetchall()
@@ -3037,6 +3059,7 @@ def api_admin_pets():
                 clinic_pets.created_at
             FROM clinic_pets
             LEFT JOIN users ON users.id = clinic_pets.user_id
+            WHERE COALESCE(clinic_pets.admin_hidden, 0) = 0
             ORDER BY clinic_pets.id DESC
             """
         ).fetchall()
@@ -3058,6 +3081,7 @@ def api_admin_pets():
                 MAX(appointments.created_at) AS created_at
             FROM appointments
             WHERE appointments.pet_id IS NULL
+              AND COALESCE(appointments.admin_pet_hidden, 0) = 0
               AND COALESCE(TRIM(appointments.pet_name), '') <> ''
               AND NOT EXISTS (
                   SELECT 1 FROM clinic_pets
@@ -3086,6 +3110,60 @@ def api_admin_pets():
     rows.extend(row_to_dict(row) for row in clinic_pets)
     rows.extend(row_to_dict(row) for row in appointment_pets)
     return api_response(True, "Petler listelendi", rows)
+
+
+@app.route("/api/admin/pets/add", methods=["POST"])
+@require_admin_api
+def api_admin_pets_add():
+    """Admin uygulamasından eklenen peti kalıcı klinik kaydına dönüştürür."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    species = (data.get("species") or "").strip()
+    if not name or not species:
+        return api_response(False, "Pet adı ve türü zorunludur", None, HTTPStatus.BAD_REQUEST)
+    now = datetime.now().isoformat(timespec="seconds")
+    with connect() as db:
+        cursor = db.execute(
+            """
+            INSERT INTO clinic_pets
+            (name, species, breed, age, owner_name, phone, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                name,
+                species,
+                (data.get("breed") or "").strip(),
+                (data.get("age") or "").strip(),
+                (data.get("owner_name") or "").strip(),
+                (data.get("phone") or "").strip(),
+                (data.get("notes") or "").strip(),
+                now,
+            ),
+        )
+        pet = db.execute("SELECT * FROM clinic_pets WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        db.commit()
+    return api_response(True, "Pet kaydedildi", row_to_dict(pet), HTTPStatus.CREATED)
+
+
+@app.route("/api/admin/pets/delete/<string:source>/<int:pet_id>", methods=["DELETE"])
+@require_admin_api
+def api_admin_pets_delete(source: str, pet_id: int):
+    """Peti kullanıcı profilinden silmeden yalnızca admin listesinden gizler."""
+    table_column = {
+        "profile": ("pets", "admin_hidden"),
+        "clinic": ("clinic_pets", "admin_hidden"),
+        "appointment": ("appointments", "admin_pet_hidden"),
+    }.get(source)
+    if not table_column:
+        return api_response(False, "Geçersiz pet kaynağı", None, HTTPStatus.BAD_REQUEST)
+    table, column = table_column
+    with connect() as db:
+        cursor = db.execute(f"UPDATE {table} SET {column} = 1 WHERE id = ?", (pet_id,))
+        db.commit()
+    if cursor.rowcount < 1:
+        return api_response(False, "Pet bulunamadı", None, HTTPStatus.NOT_FOUND)
+    log_admin_action("pet_hide", "pet", pet_id, f"source={source}")
+    return api_response(True, "Pet admin listesinden kaldırıldı", {})
 
 
 def register_appointment_pet(db, appointment_id: int) -> dict:
@@ -3617,7 +3695,9 @@ def api_admin_users_delete(user_id: int):
 @require_admin_api
 def api_admin_orders():
     with connect() as db:
-        rows = db.execute("SELECT id FROM orders ORDER BY created_at DESC").fetchall()
+        rows = db.execute(
+            "SELECT id FROM orders WHERE COALESCE(admin_hidden, 0) = 0 ORDER BY created_at DESC"
+        ).fetchall()
         orders = [order_with_items(db, row["id"]) for row in rows]
     return api_response(True, "Siparişler listelendi", [order for order in orders if order])
 
@@ -3661,6 +3741,19 @@ def api_admin_orders_update(order_id: int):
     if mail_result:
         data_payload["mail"] = {"success": mail_result.success, "message": mail_result.message}
     return api_response(True, "Sipariş durumu güncellendi", data_payload)
+
+
+@app.route("/api/admin/orders/delete/<int:order_id>", methods=["DELETE"])
+@require_admin_api
+def api_admin_orders_delete(order_id: int):
+    """Sipariş geçmişini kullanıcıdan silmeden admin görünümünden kaldırır."""
+    with connect() as db:
+        cursor = db.execute("UPDATE orders SET admin_hidden = 1 WHERE id = ?", (order_id,))
+        db.commit()
+    if cursor.rowcount < 1:
+        return api_response(False, "Sipariş bulunamadı", None, HTTPStatus.NOT_FOUND)
+    log_admin_action("order_hide", "order", order_id)
+    return api_response(True, "Sipariş admin listesinden kaldırıldı", {})
 
 
 @app.route("/api/admin/send-sms", methods=["POST"])
@@ -3903,6 +3996,7 @@ def api_admin_appointments():
                      THEN 1 ELSE 0
                    END AS pet_registered
             FROM appointments
+            WHERE COALESCE(appointments.admin_hidden, 0) = 0
             ORDER BY appointments.created_at DESC
             """
         ).fetchall()
@@ -3947,13 +4041,15 @@ def api_admin_appointments_update(appointment_id: int):
 @require_admin_api
 def api_admin_appointments_delete(appointment_id: int):
     with connect() as db:
-        db.execute("DELETE FROM appointment_reminders WHERE appointment_id = ?", (appointment_id,))
-        cursor = db.execute("DELETE FROM appointments WHERE id = ?", (appointment_id,))
+        cursor = db.execute(
+            "UPDATE appointments SET admin_hidden = 1 WHERE id = ?",
+            (appointment_id,),
+        )
         db.commit()
     if cursor.rowcount < 1:
         return api_response(False, "Randevu bulunamadı", None, HTTPStatus.NOT_FOUND)
     log_admin_action("appointment_delete", "appointment", appointment_id)
-    return api_response(True, "Randevu silindi", {})
+    return api_response(True, "Randevu admin listesinden kaldırıldı", {})
 
 
 @app.route("/api/<path:_path>", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])

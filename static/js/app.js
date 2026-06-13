@@ -20,7 +20,7 @@ let PRODUCTS = [];
 let currentUser = JSON.parse(localStorage.getItem('gvUser') || sessionStorage.getItem('gvUser') || 'null');
 let userToken = localStorage.getItem('gvUserToken') || sessionStorage.getItem('gvUserToken') || '';
 let adminToken = localStorage.getItem('gvAdminToken') || sessionStorage.getItem('gvAdminToken') || '';
-let PROFILE = {addresses:[], pets:[]};
+let PROFILE = {addresses:[], pets:[], appointments:[], reviews:[], orders:[]};
 let PENDING_ORDER = null;
 let SITE_REVIEWS = [];
 let NOTIFICATIONS = [];
@@ -569,6 +569,17 @@ function renderProfile(){
       </div>
       <div>${escHtml(item.notes || 'Ek not bulunmuyor.')}</div>
     </div>`).join('') : '<div class="info-box" style="margin:0">Henüz randevunuz bulunmuyor.</div>';
+  const orderList=document.getElementById('profileOrderList');
+  const orderStatusLabels={pending:'Bekliyor',confirmed:'Onaylandı',shipped:'Kargoya verildi',delivered:'Teslim edildi',cancelled:'İptal edildi'};
+  orderList.innerHTML=(PROFILE.orders || []).length ? PROFILE.orders.map(order=>`
+    <div class="profile-item">
+      <div class="profile-item-head">
+        <div><strong>Sipariş #${order.id}</strong><small>${escHtml((order.created_at || '').replace('T',' '))}</small></div>
+        <span class="tag">${escHtml(orderStatusLabels[order.status] || order.status)}</span>
+      </div>
+      <div>${(order.items || []).map(item=>`${escHtml(item.name || 'Ürün')} × ${Number(item.quantity || 0)}`).join('<br>')}</div>
+      <div style="margin-top:.55rem"><strong>Toplam: ₺${Number(order.total || 0).toLocaleString('tr-TR')}</strong></div>
+    </div>`).join('') : '<div class="info-box" style="margin:0">Henüz siparişiniz bulunmuyor.</div>';
   const reviewList=document.getElementById('profileReviewList');
   reviewList.innerHTML=(PROFILE.reviews || []).length ? PROFILE.reviews.map(item=>`
     <div class="profile-item">
@@ -878,7 +889,7 @@ function clearStoredUserSession(){
   // eski oturumu temizleyerek kullanıcıyı yanıltan profil görünümünü engeller.
   userToken='';
   currentUser=null;
-  PROFILE={user:null,addresses:[],pets:[],appointments:[]};
+  PROFILE={user:null,addresses:[],pets:[],appointments:[],reviews:[],orders:[]};
   NOTIFICATIONS=[];
   KNOWN_NOTIFICATION_IDS=new Set();
   localStorage.removeItem('gvUserToken');
@@ -900,7 +911,7 @@ async function logout(){
   userToken='';
   adminToken='';
   currentUser=null;
-  PROFILE={user:null,addresses:[],pets:[]};
+  PROFILE={user:null,addresses:[],pets:[],appointments:[],reviews:[],orders:[]};
   NOTIFICATIONS=[];
   KNOWN_NOTIFICATION_IDS=new Set();
   localStorage.removeItem('gvUserToken');
@@ -911,6 +922,10 @@ async function logout(){
   sessionStorage.removeItem('gvUser');
   localStorage.removeItem('gvRememberMe');
   localStorage.removeItem('gvGoogleRemember');
+  document.getElementById('loginForm')?.reset();
+  document.getElementById('loginOk').style.display='none';
+  document.getElementById('loginErr').style.display='none';
+  showAuthTab('login');
   updateAuthUI();
   applyAppointmentMemberMode();
   toast('Çıkış yapıldı.','ok');
@@ -1259,16 +1274,18 @@ async function submitPayment(){
       body:JSON.stringify(payload)
     });
     const data = await res.json();
-    if(!res.ok){throw new Error(data.error || 'Sipariş oluşturulamadı.');}
-    const total=data.total;
+    const order=data.data || data;
+    if(!res.ok || data.success===false){throw new Error(data.message || data.error || 'Sipariş oluşturulamadı.');}
+    const total=Number(order.total || cartTotal());
     cart={};updateCartUI();
     PENDING_ORDER=null;
     const ok=document.getElementById('paymentOk');
-    ok.innerHTML=`✅ Siparişiniz alındı!<br><small>Sipariş No: #${data.id} — Toplam: ₺${total.toLocaleString('tr-TR')} — SMS ile bilgilendirme yapılacaktır.</small>`;
+    ok.innerHTML=`✅ Siparişiniz alındı!<br><small>Sipariş No: #${order.id} — Toplam: ₺${total.toLocaleString('tr-TR')} — Durumunu profilinizdeki Siparişlerim alanından takip edebilirsiniz.</small>`;
     ok.style.display='block';
     document.getElementById('orderForm').reset();
     document.getElementById('paymentForm').reset();
     prepareOrderForm();
+    if(userToken)await loadProfile().catch(()=>{});
   }catch(e){
     showMsg('paymentOk','paymentErr','err',e.message || 'Sipariş oluşturulamadı. Lütfen tekrar deneyin.');
   }finally{
@@ -1336,6 +1353,7 @@ async function submitLogin(){
     await loadProfile().catch(()=>{});
     await loadNotifications();
     document.getElementById('loginForm').reset();
+    go('profile');
   }catch(e){
     reactPet('sad');
     showMsg('loginOk','loginErr','err',e.message || 'Giriş yapılamadı.');

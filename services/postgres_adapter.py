@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS pets (
     species TEXT NOT NULL,
     age TEXT,
     notes TEXT,
+    admin_hidden INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS clinic_pets (
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS clinic_pets (
     owner_name TEXT,
     phone TEXT,
     notes TEXT,
+    admin_hidden INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS hospitalizations (
@@ -100,6 +102,8 @@ CREATE TABLE IF NOT EXISTS appointments (
     appt_time TEXT NOT NULL,
     notes TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
+    admin_hidden INTEGER NOT NULL DEFAULT 0,
+    admin_pet_hidden INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_appointments_active_slot
@@ -165,6 +169,7 @@ CREATE TABLE IF NOT EXISTS orders (
     notes TEXT,
     total DOUBLE PRECISION NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
+    admin_hidden INTEGER NOT NULL DEFAULT 0,
     payment_last4 TEXT,
     payment_status TEXT,
     created_at TEXT NOT NULL

@@ -1048,11 +1048,36 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   final noteController = TextEditingController();
   List<String> notes = [];
+  late Future<List<Map<String, dynamic>>> dashboardFuture;
+  Timer? refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadNotes();
+    dashboardFuture = _loadDashboard();
+    refreshTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => reloadDashboard(),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _loadDashboard() => Future.wait([
+        widget.api.request(AppConstants.productsEndpoint),
+        widget.api.request(AppConstants.appointmentsEndpoint),
+        widget.api.request(AppConstants.dashboardEndpoint),
+        widget.api.request(AppConstants.petsEndpoint),
+      ]);
+
+  void reloadDashboard() {
+    if (mounted) setState(() => dashboardFuture = _loadDashboard());
+  }
+
+  @override
+  void dispose() {
+    refreshTimer?.cancel();
+    noteController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadNotes() async {
@@ -1080,12 +1105,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder(
-      future: Future.wait([
-        widget.api.request(AppConstants.productsEndpoint),
-        widget.api.request(AppConstants.appointmentsEndpoint),
-        widget.api.request(AppConstants.dashboardEndpoint),
-        widget.api.request(AppConstants.petsEndpoint),
-      ]),
+      future: dashboardFuture,
       builder: (context, snapshot) {
         final loading = snapshot.connectionState != ConnectionState.done;
         final data = snapshot.data;
@@ -1093,6 +1113,12 @@ class _DashboardPageState extends State<DashboardPage> {
         final appointments =
             data == null ? 0 : (data[1]['data'] as List).length;
         final totalPets = data == null ? 0 : (data[3]['data'] as List).length;
+        final petRows = data == null
+            ? <Map<String, dynamic>>[]
+            : (data[3]['data'] as List)
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList();
         final dashboard = data == null
             ? <String, dynamic>{}
             : Map<String, dynamic>.from(data[2]['data'] as Map);
@@ -1216,9 +1242,68 @@ class _DashboardPageState extends State<DashboardPage> {
                 ],
               ),
             ),
+            const SizedBox(height: 18),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: DashboardPetList(rows: petRows, loading: loading),
+            ),
           ],
         );
       },
+    );
+  }
+}
+
+class DashboardPetList extends StatelessWidget {
+  const DashboardPetList({
+    super.key,
+    required this.rows,
+    required this.loading,
+  });
+
+  final List<Map<String, dynamic>> rows;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Kayıtlı Petler',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 12),
+            if (loading)
+              const Center(child: CircularProgressIndicator())
+            else if (rows.isEmpty)
+              const Text('Kayıtlı pet bulunmuyor.')
+            else
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 360),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: rows.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, index) {
+                    final pet = rows[index];
+                    return ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.pets_outlined),
+                      title: Text('${pet['name'] ?? 'İsimsiz pet'}'),
+                      subtitle: Text(
+                        '${pet['species'] ?? 'Tür belirtilmedi'} • ${pet['owner'] ?? 'Sahip bilgisi yok'}',
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1495,13 +1580,33 @@ class _PetListPageState extends State<PetListPage> {
   int pageIndex = 0;
   PetRecord? selectedPet;
   final List<PetRecord> pets = List.of(appPets);
+  final searchController = TextEditingController();
+  final Set<String> hiddenPetKeys = {};
   bool loadingLivePets = false;
 
   @override
   void initState() {
     super.initState();
     _loadViewMode();
-    _loadLivePets();
+    _initializePets();
+  }
+
+  String _petKey(PetRecord pet) =>
+      '${pet.name.trim().toLowerCase()}|${pet.phone.trim()}';
+
+  Future<void> _initializePets() async {
+    final prefs = await SharedPreferences.getInstance();
+    hiddenPetKeys.addAll(
+      prefs.getStringList(AppConstants.hiddenAdminPetsKey) ?? const [],
+    );
+    pets.removeWhere((pet) => hiddenPetKeys.contains(_petKey(pet)));
+    await _loadLivePets();
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadLivePets() async {
@@ -1525,6 +1630,7 @@ class _PetListPageState extends State<PetListPage> {
               source: (item['source'] ?? 'profile').toString(),
             ),
           )
+          .where((pet) => !hiddenPetKeys.contains(_petKey(pet)))
           .toList();
       if (!mounted) return;
       setState(() {
@@ -1634,6 +1740,7 @@ class _PetListPageState extends State<PetListPage> {
                 children: [
                   Expanded(
                     child: TextField(
+                      controller: searchController,
                       onChanged: (value) => setState(() {
                         localQuery = value;
                         pageIndex = 0;
@@ -1644,15 +1751,6 @@ class _PetListPageState extends State<PetListPage> {
                         prefixIcon: Icon(Icons.search),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  IconButton.filledTonal(
-                    onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text(
-                                'Filtre alanı aktif. Arama kutusuna pet, sahip veya künye yazabilirsiniz.'))),
-                    icon: const Icon(Icons.filter_alt_outlined),
-                    tooltip: 'Filtrele',
                   ),
                   ViewModeButton(
                       selected: grid,
@@ -1677,7 +1775,7 @@ class _PetListPageState extends State<PetListPage> {
                 ? PetGrid(rows: pageRows, onDetail: showPetDetail)
                 : PetTable(
                     rows: pageRows,
-                    onDelete: deletePet,
+                    onDelete: (pet) => deletePet(pet),
                     onDetail: showPetDetail,
                     onEdit: editPet,
                   ),
@@ -1772,25 +1870,43 @@ class _PetListPageState extends State<PetListPage> {
               onPressed: () => Navigator.pop(context),
               child: const Text('Vazgeç')),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               if (name.text.trim().isEmpty) return;
-              setState(() {
-                pets.insert(
-                  0,
-                  PetRecord(
-                      name.text.trim(),
-                      tag.text.trim().isEmpty ? 'Künye yok' : tag.text.trim(),
-                      type.text.trim().isEmpty
-                          ? 'Belirtilmedi'
-                          : type.text.trim(),
-                      breed.text.trim().isEmpty
-                          ? 'Belirtilmedi'
-                          : breed.text.trim(),
-                      owner.text.trim(),
-                      phone.text.trim().isEmpty ? '-' : phone.text.trim()),
+              try {
+                await widget.api.request(
+                  AppConstants.petsAddEndpoint,
+                  method: 'POST',
+                  body: {
+                    'name': name.text.trim(),
+                    'species': type.text.trim().isEmpty
+                        ? 'Belirtilmedi'
+                        : type.text.trim(),
+                    'breed': breed.text.trim(),
+                    'owner_name': owner.text.trim(),
+                    'phone': phone.text.trim(),
+                    'notes': tag.text.trim().isEmpty
+                        ? ''
+                        : 'Mikroçip / Künye: ${tag.text.trim()}',
+                  },
                 );
-              });
-              Navigator.pop(context);
+                if (!mounted) return;
+                Navigator.pop(context);
+                searchController.clear();
+                setState(() {
+                  localQuery = '';
+                  pageIndex = 0;
+                });
+                await _loadLivePets();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Pet kaydedildi.')),
+                );
+              } catch (error) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Pet kaydedilemedi: $error')),
+                );
+              }
             },
             child: const Text('Kaydet'),
           ),
@@ -1799,8 +1915,59 @@ class _PetListPageState extends State<PetListPage> {
     );
   }
 
-  void deletePet(PetRecord pet) {
-    setState(() => pets.remove(pet));
+  Future<void> deletePet(PetRecord pet) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Peti listeden kaldır'),
+        content: Text(
+          '${pet.name} admin listesinden kaldırılsın mı? Kullanıcının profil kaydı korunur.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Kaldır'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      if (pet.id != null && pet.source != 'local') {
+        await widget.api.request(
+          '${AppConstants.petsDeleteEndpoint}/${pet.source}/${pet.id}',
+          method: 'DELETE',
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        pets.remove(pet);
+        hiddenPetKeys.add(_petKey(pet));
+        selectedPet = null;
+        localQuery = '';
+        pageIndex = 0;
+        searchController.clear();
+      });
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+        AppConstants.hiddenAdminPetsKey,
+        hiddenPetKeys.toList(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pet admin listesinden kaldırıldı.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Pet kaldırılamadı: $error')),
+      );
+    }
   }
 
   void showPageMessage(String text) {
@@ -2267,6 +2434,16 @@ class _AppointmentPageState extends State<AppointmentPage> {
   void reload() => setState(
       () => future = widget.api.request(AppConstants.appointmentsEndpoint));
 
+  String appointmentStatusLabel(String status) {
+    return {
+          'pending': 'Bekliyor',
+          'confirmed': 'Onaylandı',
+          'completed': 'Tamamlandı',
+          'cancelled': 'İptal edildi',
+        }[status] ??
+        status;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -2327,7 +2504,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                       title: Text(
                           '${item['first_name']} ${item['last_name']} - ${item['pet_name'] ?? item['pet_type']}'),
                       subtitle: Text(
-                          '${item['appt_date']} ${item['appt_time']} • ${item['status']}'),
+                          '${item['appt_date']} ${item['appt_time']} • ${appointmentStatusLabel(item['status']?.toString() ?? '')}'),
                       trailing: PopupMenuButton<String>(
                         onSelected: (action) async {
                           if (action == 'delete') {
@@ -2349,20 +2526,18 @@ class _AppointmentPageState extends State<AppointmentPage> {
                               value: 'completed', child: Text('Tamamlandı')),
                           PopupMenuItem(
                               value: 'cancelled', child: Text('İptal')),
-                          if (isPastAppointment(item)) ...[
-                            const PopupMenuDivider(),
-                            const PopupMenuItem(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete_outline,
-                                      color: Color(0xFFE22E4C)),
-                                  SizedBox(width: 8),
-                                  Text('Geçmiş randevuyu sil'),
-                                ],
-                              ),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete_outline,
+                                    color: Color(0xFFE22E4C)),
+                                SizedBox(width: 8),
+                                Text('Admin listesinden kaldır'),
+                              ],
                             ),
-                          ],
+                          ),
                         ],
                       ),
                     ),
@@ -2383,19 +2558,12 @@ class _AppointmentPageState extends State<AppointmentPage> {
   }
 
   Future<void> deletePastAppointment(Map<String, dynamic> item) async {
-    if (!isPastAppointment(item)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Yalnızca geçmiş randevular silinebilir.')),
-      );
-      return;
-    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Geçmiş randevuyu sil'),
+        title: const Text('Randevuyu listeden kaldır'),
         content: Text(
-          '${item['appt_date']} ${item['appt_time']} tarihli randevu kalıcı olarak silinsin mi?',
+          '${item['appt_date']} ${item['appt_time']} tarihli randevu admin listesinden kaldırılsın mı? Kullanıcı kendi profilinde görmeye devam eder.',
         ),
         actions: [
           TextButton(
@@ -2418,7 +2586,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Geçmiş randevu silindi.')),
+        const SnackBar(content: Text('Randevu admin listesinden kaldırıldı.')),
       );
       reload();
     } catch (error) {
@@ -3736,6 +3904,46 @@ class _OrdersPageState extends State<OrdersPage> {
     reload();
   }
 
+  Future<void> deleteOrder(Map<String, dynamic> order) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Siparişi listeden kaldır'),
+        content: Text(
+          '#${order['id']} numaralı sipariş admin listesinden kaldırılsın mı? Kullanıcının sipariş geçmişi korunur.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Kaldır'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.request(
+        '${AppConstants.ordersDeleteEndpoint}/${order['id']}',
+        method: 'DELETE',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sipariş admin listesinden kaldırıldı.')),
+      );
+      reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sipariş kaldırılamadı: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -3871,6 +4079,15 @@ class _OrdersPageState extends State<OrdersPage> {
                             final row = item as Map<String, dynamic>;
                             return '${row['name'] ?? 'Ürün'} • Adet: ${row['quantity']} • ₺${row['unit_price']}';
                           }).toList(),
+                        ),
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: OutlinedButton.icon(
+                            onPressed: () => deleteOrder(order),
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text('Siparişi kaldır'),
+                          ),
                         ),
                       ],
                     ),
