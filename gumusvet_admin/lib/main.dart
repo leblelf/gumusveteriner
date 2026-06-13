@@ -395,14 +395,19 @@ class _AdminShellState extends State<AdminShell> {
   // selected sol menüde hangi sayfanın açık oldugünu tutar.
   int selected = 2;
   String query = '';
+  int petRevision = 0;
 
   @override
   Widget build(BuildContext context) {
     final api = ApiClient(widget.storage);
     final pages = [
-      DashboardPage(api: api),
+      DashboardPage(api: api, petRevision: petRevision),
       AppointmentPage(api: api, query: query),
-      PetListPage(api: api, query: query),
+      PetListPage(
+        api: api,
+        query: query,
+        onPetCreated: () => setState(() => petRevision++),
+      ),
       HospitalizedApiPage(api: api, query: query),
       ProductPage(api: api, query: query),
       OrdersPage(api: api, query: query),
@@ -1037,9 +1042,14 @@ class PawPatternStrip extends StatelessWidget {
 }
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key, required this.api});
+  const DashboardPage({
+    super.key,
+    required this.api,
+    required this.petRevision,
+  });
 
   final ApiClient api;
+  final int petRevision;
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -1049,33 +1059,30 @@ class _DashboardPageState extends State<DashboardPage> {
   final noteController = TextEditingController();
   List<String> notes = [];
   late Future<List<Map<String, dynamic>>> dashboardFuture;
-  Timer? refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadNotes();
     dashboardFuture = _loadDashboard();
-    refreshTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) => reloadDashboard(),
-    );
   }
 
   Future<List<Map<String, dynamic>>> _loadDashboard() => Future.wait([
         widget.api.request(AppConstants.productsEndpoint),
         widget.api.request(AppConstants.appointmentsEndpoint),
         widget.api.request(AppConstants.dashboardEndpoint),
-        widget.api.request(AppConstants.petsEndpoint),
       ]);
 
-  void reloadDashboard() {
-    if (mounted) setState(() => dashboardFuture = _loadDashboard());
+  @override
+  void didUpdateWidget(covariant DashboardPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.petRevision != widget.petRevision) {
+      setState(() => dashboardFuture = _loadDashboard());
+    }
   }
 
   @override
   void dispose() {
-    refreshTimer?.cancel();
     noteController.dispose();
     super.dispose();
   }
@@ -1112,16 +1119,10 @@ class _DashboardPageState extends State<DashboardPage> {
         final products = data == null ? 0 : (data[0]['data'] as List).length;
         final appointments =
             data == null ? 0 : (data[1]['data'] as List).length;
-        final totalPets = data == null ? 0 : (data[3]['data'] as List).length;
-        final petRows = data == null
-            ? <Map<String, dynamic>>[]
-            : (data[3]['data'] as List)
-                .whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList();
         final dashboard = data == null
             ? <String, dynamic>{}
             : Map<String, dynamic>.from(data[2]['data'] as Map);
+        final totalPets = int.tryParse('${dashboard['total_pets'] ?? 0}') ?? 0;
         final monthlySales = (dashboard['monthly_sales'] as List? ?? [])
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
@@ -1242,68 +1243,9 @@ class _DashboardPageState extends State<DashboardPage> {
                 ],
               ),
             ),
-            const SizedBox(height: 18),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: DashboardPetList(rows: petRows, loading: loading),
-            ),
           ],
         );
       },
-    );
-  }
-}
-
-class DashboardPetList extends StatelessWidget {
-  const DashboardPetList({
-    super.key,
-    required this.rows,
-    required this.loading,
-  });
-
-  final List<Map<String, dynamic>> rows;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Kayıtlı Petler',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 12),
-            if (loading)
-              const Center(child: CircularProgressIndicator())
-            else if (rows.isEmpty)
-              const Text('Kayıtlı pet bulunmuyor.')
-            else
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 360),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: rows.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (_, index) {
-                    final pet = rows[index];
-                    return ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.pets_outlined),
-                      title: Text('${pet['name'] ?? 'İsimsiz pet'}'),
-                      subtitle: Text(
-                        '${pet['species'] ?? 'Tür belirtilmedi'} • ${pet['owner'] ?? 'Sahip bilgisi yok'}',
-                      ),
-                    );
-                  },
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -1562,10 +1504,16 @@ class QuickNotesCard extends StatelessWidget {
 }
 
 class PetListPage extends StatefulWidget {
-  const PetListPage({super.key, required this.api, required this.query});
+  const PetListPage({
+    super.key,
+    required this.api,
+    required this.query,
+    required this.onPetCreated,
+  });
 
   final ApiClient api;
   final String query;
+  final VoidCallback onPetCreated;
 
   @override
   State<PetListPage> createState() => _PetListPageState();
@@ -1898,6 +1846,7 @@ class _PetListPageState extends State<PetListPage> {
                 });
                 await _loadLivePets();
                 if (!mounted) return;
+                widget.onPetCreated();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Pet kaydedildi.')),
                 );
