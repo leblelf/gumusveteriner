@@ -1071,7 +1071,42 @@ class _DashboardPageState extends State<DashboardPage> {
         widget.api.request(AppConstants.productsEndpoint),
         widget.api.request(AppConstants.appointmentsEndpoint),
         widget.api.request(AppConstants.dashboardEndpoint),
+        widget.api.request(AppConstants.petsEndpoint),
       ]);
+
+  String _petCountKey(String name, String phone) {
+    final normalizedName = name.trim().toLowerCase();
+    final normalizedPhone = phone.replaceAll(RegExp(r'\D'), '');
+    return '$normalizedName|$normalizedPhone';
+  }
+
+  int _combinedPetTotal(
+    Map<String, dynamic> dashboard,
+    List<dynamic> livePets,
+  ) {
+    final databaseTotal = int.tryParse('${dashboard['total_pets'] ?? 0}') ?? 0;
+    final liveCounts = <String, int>{};
+    for (final raw in livePets.whereType<Map>()) {
+      final pet = Map<String, dynamic>.from(raw);
+      final key = _petCountKey(
+        '${pet['name'] ?? ''}',
+        '${pet['phone'] ?? ''}',
+      );
+      liveCounts[key] = (liveCounts[key] ?? 0) + 1;
+    }
+
+    var legacyOnlyCount = 0;
+    for (final pet in appPets) {
+      final key = _petCountKey(pet.name, pet.phone);
+      final matchingLiveCount = liveCounts[key] ?? 0;
+      if (matchingLiveCount > 0) {
+        liveCounts[key] = matchingLiveCount - 1;
+      } else {
+        legacyOnlyCount++;
+      }
+    }
+    return databaseTotal + legacyOnlyCount;
+  }
 
   @override
   void didUpdateWidget(covariant DashboardPage oldWidget) {
@@ -1122,7 +1157,12 @@ class _DashboardPageState extends State<DashboardPage> {
         final dashboard = data == null
             ? <String, dynamic>{}
             : Map<String, dynamic>.from(data[2]['data'] as Map);
-        final totalPets = int.tryParse('${dashboard['total_pets'] ?? 0}') ?? 0;
+        final totalPets = data == null
+            ? 0
+            : _combinedPetTotal(
+                dashboard,
+                data[3]['data'] as List? ?? const [],
+              );
         final monthlySales = (dashboard['monthly_sales'] as List? ?? [])
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
