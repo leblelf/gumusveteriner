@@ -331,6 +331,7 @@ body.user-session #nb-auth,body.admin-session #nb-auth{display:none}
 .site-footer strong{color:var(--teal);font-weight:600}
 .site-footer a{color:var(--teal);font-weight:500}
 .made-by{display:inline-block;margin-top:.25rem;color:var(--muted);font-size:11px}
+.footer-link-button{border:0;padding:0;margin-top:.35rem;background:transparent;color:inherit;font:inherit;text-decoration:underline;cursor:pointer}
 .theme-toggle{border:1px solid var(--border2);background:var(--card);border-radius:50%;width:36px;height:36px;cursor:pointer}
 .auth-welcome{display:none}
 .avatar-preview{width:54px;height:54px;border-radius:50%;object-fit:cover;border:2px solid var(--teal-light);display:none;margin:.25rem 0 .75rem}

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -338,15 +339,23 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Row(
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 12,
+                    runSpacing: 0,
                     children: [
-                      Checkbox(
-                        value: rememberMe,
-                        onChanged: (value) =>
-                            setState(() => rememberMe = value ?? true),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: rememberMe,
+                            onChanged: (value) =>
+                                setState(() => rememberMe = value ?? true),
+                          ),
+                          const Text('Beni hatırla'),
+                        ],
                       ),
-                      const Text('Beni hatırla'),
-                      const Spacer(),
                       TextButton(
                         onPressed: forgotPassword,
                         child: const Text('Şifremi unuttum'),
@@ -393,7 +402,7 @@ class AdminShell extends StatefulWidget {
 class _AdminShellState extends State<AdminShell> {
   // Admin girişinden sonra görünen ana iskelet.
   // selected sol menüde hangi sayfanın açık oldugünu tutar.
-  int selected = 2;
+  int selected = 0;
   String query = '';
   int petRevision = 0;
 
@@ -419,6 +428,7 @@ class _AdminShellState extends State<AdminShell> {
       AppointmentSlotsPage(api: api),
       ClinicSettingsPage(storage: widget.storage),
       AdminProfilePage(api: api, storage: widget.storage),
+      HelpPage(api: api),
     ];
     final mobile = MediaQuery.sizeOf(context).width < 820;
     final content = Column(
@@ -585,6 +595,12 @@ class Sidebar extends StatelessWidget {
                     label: 'Admin Profili',
                     active: selected == 13,
                     onTap: () => onSelected(13),
+                  ),
+                  SidebarTile(
+                    icon: Icons.help_outline,
+                    label: 'Yardım & Kullanım',
+                    active: selected == 14,
+                    onTap: () => onSelected(14),
                   ),
                   SidebarTile(
                       icon: Icons.logout,
@@ -3579,66 +3595,150 @@ class _CrudListPageState extends State<CrudListPage> {
     final imageUrl =
         TextEditingController(text: item?['image_url']?.toString() ?? '');
     final isProduct = widget.loadPath == AppConstants.productsEndpoint;
+    String? formError;
+    bool saving = false;
     await showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(item == null ? 'Yeni kayıt' : 'Kaydı güncelle'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: name,
-                decoration: const InputDecoration(labelText: 'Ad')),
-            const SizedBox(height: 10),
-            TextField(
-                controller: category,
-                decoration: const InputDecoration(labelText: 'Kategori')),
-            const SizedBox(height: 10),
-            TextField(
-                controller: price,
-                decoration: const InputDecoration(labelText: 'Fiyat'),
-                keyboardType: TextInputType.number),
-            if (isProduct) ...[
-              const SizedBox(height: 10),
-              TextField(
-                  controller: stock,
-                  decoration: const InputDecoration(labelText: 'Stok'),
-                  keyboardType: TextInputType.number),
-              const SizedBox(height: 10),
-              TextField(
-                  controller: imageUrl,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(item == null ? 'Yeni kayıt' : 'Kaydı güncelle'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: name,
+                    decoration: const InputDecoration(labelText: 'Ad *')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: category,
+                    decoration: const InputDecoration(labelText: 'Kategori *')),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: price,
                   decoration: const InputDecoration(
-                      labelText: 'Ürün fotoğraf URL',
-                      hintText: 'https://.../urun.jpg')),
-            ],
+                      labelText: 'Fiyat *', prefixText: '₺ '),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9,.]')),
+                  ],
+                ),
+                if (isProduct) ...[
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: stock,
+                    decoration: const InputDecoration(labelText: 'Stok *'),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                      controller: imageUrl,
+                      decoration: const InputDecoration(
+                          labelText: 'Ürün fotoğraf URL',
+                          hintText: 'https://.../urun.jpg')),
+                ],
+                if (formError != null) ...[
+                  const SizedBox(height: 12),
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      formError!,
+                      style: const TextStyle(
+                          color: Colors.red, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Vazgeç')),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final cleanName = name.text.trim();
+                      final cleanCategory = category.text.trim();
+                      final parsedPrice = double.tryParse(
+                          price.text.trim().replaceAll(',', '.'));
+                      final parsedStock = int.tryParse(stock.text.trim());
+                      final cleanImageUrl = imageUrl.text.trim();
+                      String? validationError;
+                      if (cleanName.length < 2) {
+                        validationError = 'Ürün adı en az 2 karakter olmalı.';
+                      } else if (cleanCategory.isEmpty) {
+                        validationError = 'Kategori alanı zorunludur.';
+                      } else if (parsedPrice == null || parsedPrice <= 0) {
+                        validationError =
+                            'Fiyat sıfırdan büyük, geçerli bir sayı olmalı.';
+                      } else if (isProduct &&
+                          (parsedStock == null || parsedStock < 0)) {
+                        validationError =
+                            'Stok negatif olmayan tam sayı olmalı.';
+                      } else if (cleanImageUrl.isNotEmpty &&
+                          !{'http', 'https'}
+                              .contains(Uri.tryParse(cleanImageUrl)?.scheme)) {
+                        validationError =
+                            'Fotoğraf adresi geçerli bir URL olmalı.';
+                      }
+                      if (validationError != null) {
+                        setDialogState(() => formError = validationError);
+                        return;
+                      }
+                      setDialogState(() {
+                        formError = null;
+                        saving = true;
+                      });
+                      final body = {
+                        'name': cleanName,
+                        'price': parsedPrice,
+                        'category': cleanCategory,
+                        'stock': isProduct ? parsedStock : 0,
+                        if (isProduct) 'image_url': cleanImageUrl,
+                      };
+                      try {
+                        if (item == null) {
+                          await widget.api.request(widget.addPath,
+                              method: 'POST', body: body);
+                        } else {
+                          await widget.api.request(
+                              '${widget.updatePath}/${item['id']}',
+                              method: 'PATCH',
+                              body: body);
+                        }
+                        if (!mounted || !dialogContext.mounted) return;
+                        Navigator.pop(dialogContext);
+                        reload();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(item == null
+                                ? 'Ürün başarıyla eklendi.'
+                                : 'Ürün başarıyla güncellendi.'),
+                          ),
+                        );
+                      } catch (error) {
+                        if (!dialogContext.mounted) return;
+                        setDialogState(() {
+                          saving = false;
+                          formError =
+                              error.toString().replaceFirst('Exception: ', '');
+                        });
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Kaydet'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Vazgeç')),
-          FilledButton(
-            onPressed: () async {
-              final body = {
-                'name': name.text,
-                'price': double.tryParse(price.text) ?? 0,
-                'category': category.text,
-                'stock': int.tryParse(stock.text) ?? 0,
-                if (isProduct) 'image_url': imageUrl.text.trim(),
-              };
-              if (item == null) {
-                await widget.api
-                    .request(widget.addPath, method: 'POST', body: body);
-              } else {
-                await widget.api.request('${widget.updatePath}/${item['id']}',
-                    method: 'PATCH', body: body);
-              }
-              if (mounted) Navigator.pop(context);
-              reload();
-            },
-            child: const Text('Kaydet'),
-          ),
-        ],
       ),
     );
   }
@@ -3798,10 +3898,45 @@ class _CrudListPageState extends State<CrudListPage> {
                           IconButton(
                             icon: const Icon(Icons.delete_outline),
                             onPressed: () async {
-                              await widget.api.request(
-                                  '${widget.deletePath}/${item['id']}',
-                                  method: 'DELETE');
-                              reload();
+                              final approved = await showDialog<bool>(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text('Ürünü sil'),
+                                  content: Text(
+                                      '${item['name']} kalıcı olarak silinsin mi?'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text('Vazgeç'),
+                                    ),
+                                    FilledButton.tonalIcon(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      icon: const Icon(Icons.delete_outline),
+                                      label: const Text('Sil'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (approved != true) return;
+                              try {
+                                await widget.api.request(
+                                    '${widget.deletePath}/${item['id']}',
+                                    method: 'DELETE');
+                                if (!context.mounted) return;
+                                reload();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('Ürün silindi.')),
+                                );
+                              } catch (error) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text('Ürün silinemedi: $error')),
+                                );
+                              }
                             },
                           ),
                         ],
@@ -5341,6 +5476,139 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
                       ],
                     ),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class HelpPage extends StatelessWidget {
+  const HelpPage({super.key, required this.api});
+
+  final ApiClient api;
+
+  @override
+  Widget build(BuildContext context) {
+    final guides = [
+      (
+        Icons.calendar_month_outlined,
+        'Randevu yönetimi',
+        'Randevular ekranından talebi açın, hizmet ve pet bilgisini kontrol edin, ardından durumu Onaylandı, Tamamlandı veya İptal olarak güncelleyin.'
+      ),
+      (
+        Icons.inventory_2_outlined,
+        'Ürün ve stok',
+        'Ürünler ekranında fiyat ve stok alanlarını düzenleyin. Stok 5 adedin altına düştüğünde dashboard uyarı verir; stok sıfırsa ürün siteden sepete eklenemez.'
+      ),
+      (
+        Icons.pets_outlined,
+        'Pet ve yatış',
+        'Pet Listesi yeni kayıtları, Yatan Hastalar ise tanı, oda ve tedavi planını yönetir. Taburcu edilen kayıt geçmişte korunur.'
+      ),
+      (
+        Icons.shopping_bag_outlined,
+        'Siparişler',
+        'Gelen Siparişler ekranından sipariş durumunu değiştirin. Kargoya verildi ve diğer önemli durumlarda müşteriye e-posta ve site bildirimi gönderilir.'
+      ),
+      (
+        Icons.reviews_outlined,
+        'Müşteri iletişimi',
+        'Yorumlar ve Sorular ekranlarında müşteri mesajlarını yanıtlayın. Yanıtlar kullanıcı bildirimlerine ve uygun olduğunda e-posta adresine iletilir.'
+      ),
+      (
+        Icons.security_outlined,
+        'Güvenli kullanım',
+        'Admin şifresini paylaşmayın, ortak bilgisayarda işiniz bitince çıkış yapın ve kişisel verileri yalnızca klinik işlemleri için kullanın.'
+      ),
+    ];
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        const PageHeader(
+          title: 'Yardım & Kullanım',
+          subtitle: 'Günlük işlemler için kısa yol haritası ve sistem durumu.',
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: api.request(AppConstants.healthEndpoint),
+            builder: (context, snapshot) {
+              final online = snapshot.hasData && !snapshot.hasError;
+              final database =
+                  snapshot.data?['data']?['database_type']?.toString() ?? '-';
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor:
+                        (online ? Colors.green : Colors.red).withOpacity(.12),
+                    child: Icon(
+                      online ? Icons.cloud_done_outlined : Icons.cloud_off,
+                      color: online ? Colors.green : Colors.red,
+                    ),
+                  ),
+                  title: Text(
+                    online ? 'Sistem çevrimiçi' : 'Bağlantı kontrol ediliyor',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: Text(
+                    online
+                        ? 'API bağlantısı hazır • Veritabanı: $database'
+                        : 'İnternet bağlantısını kontrol edip sayfayı yeniden açın.',
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 1000
+                  ? 3
+                  : constraints.maxWidth >= 650
+                      ? 2
+                      : 1;
+              final width =
+                  (constraints.maxWidth - ((columns - 1) * 14)) / columns;
+              return Wrap(
+                spacing: 14,
+                runSpacing: 14,
+                children: guides
+                    .map(
+                      (guide) => SizedBox(
+                        width: width,
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(guide.$1, color: appOrange(context)),
+                                const SizedBox(height: 12),
+                                Text(
+                                  guide.$2,
+                                  style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  guide.$3,
+                                  style: TextStyle(
+                                      color: appMuted(context), height: 1.45),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              );
+            },
           ),
         ),
       ],

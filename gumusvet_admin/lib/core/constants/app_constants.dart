@@ -10,6 +10,7 @@ class AppConstants {
   );
 
   static const String loginEndpoint = '/api/admin/login';
+  static const String healthEndpoint = '/api/health';
   static const String logoutEndpoint = '/api/admin/logout';
   static const String productsEndpoint = '/api/admin/products';
   static const String productsAddEndpoint = '/api/admin/products/add';

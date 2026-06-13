@@ -49,6 +49,7 @@
   <button class="nb" id="nb-shop"     onclick="go('shop')">Ürünler</button>
   <button class="nb" id="nb-blog"     onclick="go('blog')">Blog</button>
   <button class="nb" id="nb-contact"  onclick="go('contact')">İletişim</button>
+  <button class="nb" id="nb-help"     onclick="go('help')">Yardım</button>
   <button class="nb" id="nb-auth" onclick="go('auth')">Giriş Yap</button>
   <button class="nb cta" onclick="go('appt')">📅 Randevu Al</button>
   <button class="nb" id="reviewBtn" style="display:none" onclick="go('review')">Yorum Yap</button>
@@ -318,6 +319,21 @@
           <div class="msg-err" id="contactErr"></div>
         </form>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Müşterilerin temel işlemleri kolayca tamamlayabilmesi için kısa yardım sayfası. -->
+<div class="page" id="page-help">
+  <div class="page-top"><h2>Yardım Merkezi</h2><p>Randevu, üyelik, sipariş ve profil işlemleri için kısa rehber</p></div>
+  <div class="sec">
+    <div class="g3">
+      <div class="card"><div class="icon-box">📅</div><h3>Randevu Nasıl Alınır?</h3><p>Randevu Al bölümünde gün, saat, hizmet ve hayvanınızı seçin. Üye girişi yaptıysanız kayıtlı bilgileriniz otomatik kullanılır.</p></div>
+      <div class="card"><div class="icon-box">🐾</div><h3>Hayvan Sağlık Dosyası</h3><p>Adınıza tıklayıp profilinizi açın. Hayvan ekleyebilir; hastalık, aşı, tedavi, alerji ve ilaç kayıtlarını görüntüleyebilirsiniz.</p></div>
+      <div class="card"><div class="icon-box">🛒</div><h3>Sipariş Takibi</h3><p>Ürünleri sepete ekleyip ödeme adımını tamamlayın. Sipariş durumunu profilinizdeki Siparişlerim alanından takip edin.</p></div>
+      <div class="card"><div class="icon-box">🔔</div><h3>Bildirimler</h3><p>Randevu onayı, sipariş durumu ve yorum yanıtları giriş yaptıktan sonra üst menüdeki bildirim simgesinde görünür.</p></div>
+      <div class="card"><div class="icon-box">💬</div><h3>Yorum ve Sorular</h3><p>Genel klinik yorumu yapabilir, satın aldığınız ürünleri değerlendirebilir veya İletişim bölümünden kliniğe soru gönderebilirsiniz.</p></div>
+      <div class="card"><div class="icon-box">📞</div><h3>Yardıma mı İhtiyacınız Var?</h3><p>0546 136 14 33 numaralı 7/24 hattı arayın veya sağ alttaki WhatsApp düğmesini kullanın.</p></div>
     </div>
   </div>
 </div>
@@ -634,7 +650,8 @@
   </div>
   <div>
     <a href="tel:+905461361433">0546 136 14 33</a> • 24 saat açık<br>
-    Instagram: <a href="https://www.instagram.com/gumusvetsamsun/" target="_blank" rel="noopener">@gumusvetsamsun</a>
+    Instagram: <a href="https://www.instagram.com/gumusvetsamsun/" target="_blank" rel="noopener">@gumusvetsamsun</a><br>
+    <button type="button" class="footer-link-button" onclick="go('help')">Yardım Merkezi</button>
   </div>
   <div>
     <span id="site-footer-rights">© 2026 Samsun Gümüş Veteriner Muayenehanesi. Tüm hakları saklıdır.</span>

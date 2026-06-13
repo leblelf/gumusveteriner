@@ -1415,8 +1415,8 @@ async function submitRegister(){
 }
 
 // -- Sayfa navigasyon ---------------------------------------------------------
-const pageMap={home:'page-home',about:'page-about',services:'page-services',shop:'page-shop',appt:'page-appt',blog:'page-blog',contact:'page-contact',auth:'page-auth',profile:'page-profile',reviews:'page-reviews',review:'page-review',forbidden:'page-403',order:'page-order',payment:'page-payment'};
-const navMap={home:'nb-home',about:'nb-about',services:'nb-services',shop:'nb-shop',blog:'nb-blog',contact:'nb-contact',auth:'nb-auth'};
+const pageMap={home:'page-home',about:'page-about',services:'page-services',shop:'page-shop',appt:'page-appt',blog:'page-blog',contact:'page-contact',help:'page-help',auth:'page-auth',profile:'page-profile',reviews:'page-reviews',review:'page-review',forbidden:'page-403',order:'page-order',payment:'page-payment'};
+const navMap={home:'nb-home',about:'nb-about',services:'nb-services',shop:'nb-shop',blog:'nb-blog',contact:'nb-contact',help:'nb-help',auth:'nb-auth'};
 function go(id){
   // Tek sayfa uygulamada sayfalar arası geçişleri yöneten ana fonksiyon.
   // Yeni bir sayfa bölümü eklersen önce pageMap'e, sonra HTML'de ilgili id'ye bak.

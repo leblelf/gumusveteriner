@@ -1,31 +1,35 @@
-# gumusvet_admin
+# Gümüş Veteriner Admin
 
-Gumus Veteriner Flask API'sine baglanan Flutter admin uygulamasi.
+Flask API ve PostgreSQL veritabanına bağlanan Flutter yönetim uygulamasıdır.
 
-Base URL:
+## Çalıştırma
+
+```powershell
+C:\flutter\flutter\bin\flutter.bat pub get
+C:\flutter\flutter\bin\flutter.bat run -d windows
+```
+
+## Release
+
+```powershell
+C:\flutter\flutter\bin\flutter.bat build windows --release
+```
+
+Çıktı:
 
 ```text
-https://wwwgumusvet.com
+build\windows\x64\runner\Release\gumusvet_admin.exe
 ```
 
-Flutter bu bilgisayarda kurulu olmadigi icin platform klasorleri manuel placeholder olarak birakildi.
-Flutter kurulu bir bilgisayarda su komutlarla Android, iOS ve Windows dosyalarini tamamlayin:
+Proje kökündeki `scripts\package_windows.ps1` release dosyalarını ve kullanım
+kılavuzunu taşınabilir ZIP paketine dönüştürür.
 
-```bash
-cd gumusvet_admin
-flutter create --platforms=android,ios,windows .
-flutter pub get
-flutter run
-```
+## API
 
-Windows icin:
+Varsayılan adres: `https://wwwgumusvet.com`
 
-```bash
-flutter run -d windows
-```
+Farklı ortam:
 
-Android icin:
-
-```bash
-flutter run -d android
+```powershell
+C:\flutter\flutter\bin\flutter.bat run -d windows --dart-define=API_BASE_URL=http://localhost:5000
 ```

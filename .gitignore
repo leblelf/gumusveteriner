@@ -7,6 +7,7 @@ venv/
 !.env.example
 instance/
 backups/
+dist/
 *.db
 data/*.db
 *.log
