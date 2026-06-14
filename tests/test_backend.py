@@ -272,6 +272,46 @@ class BackendSmokeTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(order["status"], "shipped")
 
+    def test_member_order_returns_items_after_database_insert(self):
+        with application.connect() as db:
+            product = db.execute(
+                """
+                INSERT INTO products (name, category, price, stock, active)
+                VALUES (?, ?, ?, ?, 1)
+                """,
+                ("Sipariş Test Ürünü", "Test", 125.0, 4),
+            )
+            product_id = product.lastrowid
+            db.commit()
+
+        response = self.client.post(
+            "/api/orders",
+            json={
+                "first_name": "Test",
+                "last_name": "Müşteri",
+                "phone": "05000000004",
+                "email": "customer@example.com",
+                "address": "Toptepe Mahallesi Test Sokak No 10 Samsun",
+                "items": [{"product_id": product_id, "quantity": 2}],
+                "card_name": "Test Müşteri",
+                "card_number": "4242424242424242",
+                "card_expiry": "12/30",
+                "card_cvc": "123",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertEqual(payload["total"], 250.0)
+        self.assertEqual(payload["items"][0]["product_id"], product_id)
+        self.assertEqual(payload["items"][0]["quantity"], 2)
+        with application.connect() as db:
+            product = db.execute(
+                "SELECT stock FROM products WHERE id = ?",
+                (product_id,),
+            ).fetchone()
+        self.assertEqual(product["stock"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

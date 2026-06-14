@@ -1841,7 +1841,14 @@ class GumusVeterinerHandler(SimpleHTTPRequestHandler):
             order = row_to_dict(db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone())
             order["items"] = [
                 row_to_dict(row)
-                for row in db.execute("SELECT product_id, quantity, unit_price FROM order_items WHERE order_id = ?", (order_id,))
+                for row in db.execute(
+                    """
+                    SELECT product_id, quantity, unit_price
+                    FROM order_items
+                    WHERE order_id = ?
+                    """,
+                    (order_id,),
+                ).fetchall()
             ]
         self.send_json(order, HTTPStatus.CREATED)
 

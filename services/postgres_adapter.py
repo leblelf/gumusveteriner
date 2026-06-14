@@ -286,6 +286,10 @@ class PostgresCursor:
     def fetchall(self):
         return self._cursor.fetchall()
 
+    def __iter__(self):
+        """SQLite cursor davranışıyla uyumlu olacak şekilde satır iterasyonu sağlar."""
+        return iter(self._cursor)
+
 
 class PostgresConnection:
     def __init__(self, database_url: str):
