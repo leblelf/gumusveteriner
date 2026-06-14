@@ -4,9 +4,12 @@ import logging
 import os
 import smtplib
 import ssl
+from base64 import urlsafe_b64encode
 from dataclasses import dataclass
 from email.headerregistry import Address
 from email.message import EmailMessage
+
+import requests
 
 from services.sms_service import load_local_env
 
@@ -54,6 +57,14 @@ def get_mail_status() -> dict:
     password = (os.environ.get("SMTP_PASSWORD") or "").replace(" ", "").strip()
     configured_sender = (os.environ.get("SMTP_FROM") or username).strip().lower()
     effective_sender = username if host == "smtp.gmail.com" else configured_sender
+    gmail_api_configured = all(
+        (os.environ.get(name) or "").strip()
+        for name in (
+            "GOOGLE_CLIENT_ID",
+            "GOOGLE_CLIENT_SECRET",
+            "GMAIL_REFRESH_TOKEN",
+        )
+    )
     try:
         port = int((os.environ.get("SMTP_PORT") or "587").strip())
     except ValueError:
@@ -70,6 +81,7 @@ def get_mail_status() -> dict:
             len(password) == 16 if host == "smtp.gmail.com" else bool(password)
         ),
         "gmail_ssl_fallback": host == "smtp.gmail.com",
+        "gmail_api_fallback_configured": gmail_api_configured,
     }
 
 
@@ -103,6 +115,94 @@ def _send_smtp_message(
         smtp.login(username, password)
         smtp.send_message(message)
     return "starttls" if use_tls else "plain"
+
+
+def _send_gmail_api_message(message: EmailMessage) -> EmailResult:
+    """SMTP erişilemezse Gmail API üzerinden aynı hesaptan mesaj gönderir."""
+    client_id = (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
+    client_secret = (os.environ.get("GOOGLE_CLIENT_SECRET") or "").strip()
+    refresh_token = (os.environ.get("GMAIL_REFRESH_TOKEN") or "").strip()
+    if not client_id or not client_secret or not refresh_token:
+        return EmailResult(
+            False,
+            "Mail gönderilemedi",
+            "Gmail API yedeği için GMAIL_REFRESH_TOKEN tanımlı değil",
+        )
+
+    try:
+        token_response = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+            timeout=20,
+        )
+        if token_response.status_code != 200:
+            mail_logger.error(
+                "gmail_api_token_failed status=%s",
+                token_response.status_code,
+            )
+            return EmailResult(
+                False,
+                "Mail gönderilemedi",
+                "Gmail API yetkilendirmesi yenilenemedi",
+            )
+
+        access_token = (token_response.json().get("access_token") or "").strip()
+        if not access_token:
+            mail_logger.error("gmail_api_token_missing")
+            return EmailResult(
+                False,
+                "Mail gönderilemedi",
+                "Gmail API erişim anahtarı alınamadı",
+            )
+
+        raw_message = urlsafe_b64encode(message.as_bytes()).decode("ascii")
+        send_response = requests.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            json={"raw": raw_message},
+            timeout=20,
+        )
+        if send_response.status_code not in {200, 201}:
+            mail_logger.error(
+                "gmail_api_send_failed status=%s",
+                send_response.status_code,
+            )
+            return EmailResult(
+                False,
+                "Mail gönderilemedi",
+                "Gmail API mesajı kabul etmedi",
+            )
+    except requests.RequestException as exc:
+        mail_logger.error(
+            "gmail_api_connection_failed error_type=%s",
+            type(exc).__name__,
+        )
+        return EmailResult(
+            False,
+            "Mail gönderilemedi",
+            "Gmail API bağlantısı kurulamadı",
+        )
+    except (TypeError, ValueError) as exc:
+        mail_logger.error(
+            "gmail_api_response_invalid error_type=%s",
+            type(exc).__name__,
+        )
+        return EmailResult(
+            False,
+            "Mail gönderilemedi",
+            "Gmail API geçersiz cevap döndürdü",
+        )
+
+    mail_logger.info("gmail_api_send_success recipient=%s", message["To"])
+    return EmailResult(True, "Mail gönderildi")
 
 
 def send_email(to_email: str, subject: str, body: str) -> EmailResult:
@@ -232,10 +332,16 @@ def send_email(to_email: str, subject: str, body: str) -> EmailResult:
                 type(exc).__name__,
                 type(fallback_exc).__name__,
             )
+            api_result = _send_gmail_api_message(message)
+            if api_result.success:
+                return api_result
             return EmailResult(
                 False,
                 "Mail gönderilemedi",
-                "SMTP sunucusuna 587 ve 465 portlarından ulaşılamadı",
+                (
+                    "SMTP sunucusuna 587 ve 465 portlarından ulaşılamadı. "
+                    f"{api_result.detail}"
+                ),
             )
         except Exception as fallback_exc:
             mail_logger.exception(

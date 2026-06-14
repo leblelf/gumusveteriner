@@ -2573,7 +2573,12 @@ def api_test_mail():
             recipient,
             mail_result.detail or mail_result.message,
         )
-        return api_response(False, "Test maili gönderilemedi. Render loglarını kontrol edin.", None, HTTPStatus.BAD_GATEWAY)
+        return api_response(
+            False,
+            "Test maili gönderilemedi",
+            {"detail": mail_result.detail or mail_result.message},
+            HTTPStatus.BAD_GATEWAY,
+        )
     security_logger.info("smtp_test_mail_sent email=%s", recipient)
     return api_response(True, "Test maili gönderildi", {"email": recipient})
 

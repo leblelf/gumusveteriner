@@ -117,6 +117,49 @@ class GmailSmtpServiceTests(unittest.TestCase):
         )
         ssl_smtp.send_message.assert_called_once()
 
+    def test_gmail_api_is_used_when_both_smtp_ports_fail(self):
+        environment = {
+            "SMTP_HOST": "smtp.gmail.com",
+            "SMTP_PORT": "587",
+            "SMTP_USERNAME": "authenticated@example.invalid",
+            "SMTP_PASSWORD": "x" * 16,
+            "SMTP_FROM": "authenticated@example.invalid",
+            "SMTP_USE_TLS": "true",
+            "GOOGLE_CLIENT_ID": "client-id",
+            "GOOGLE_CLIENT_SECRET": "client-secret",
+            "GMAIL_REFRESH_TOKEN": "refresh-token",
+        }
+        token_response = unittest.mock.Mock(
+            status_code=200,
+            json=lambda: {"access_token": "access-token"},
+        )
+        send_response = unittest.mock.Mock(status_code=200)
+        with patch.dict(os.environ, environment, clear=False):
+            with patch(
+                "services.mail_service.smtplib.SMTP",
+                side_effect=TimeoutError("starttls timed out"),
+            ):
+                with patch(
+                    "services.mail_service.smtplib.SMTP_SSL",
+                    side_effect=TimeoutError("ssl timed out"),
+                ):
+                    with patch(
+                        "services.mail_service.requests.post",
+                        side_effect=[token_response, send_response],
+                    ) as post:
+                        result = mail_service.send_email(
+                            "customer@example.com",
+                            "Test",
+                            "İçerik",
+                        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(
+            post.call_args_list[1].args[0],
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
