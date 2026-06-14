@@ -86,6 +86,37 @@ class GmailSmtpServiceTests(unittest.TestCase):
         self.assertIn("App Password", result.detail)
         self.assertNotIn("xxxxxxxxxxxxxxxx", result.detail)
 
+    def test_gmail_uses_ssl_465_when_starttls_connection_fails(self):
+        environment = {
+            "SMTP_HOST": "smtp.gmail.com",
+            "SMTP_PORT": "587",
+            "SMTP_USERNAME": "authenticated@example.invalid",
+            "SMTP_PASSWORD": "x" * 16,
+            "SMTP_FROM": "authenticated@example.invalid",
+            "SMTP_USE_TLS": "true",
+        }
+        with patch.dict(os.environ, environment, clear=False):
+            with patch(
+                "services.mail_service.smtplib.SMTP",
+                side_effect=TimeoutError("connection timed out"),
+            ):
+                with patch("services.mail_service.smtplib.SMTP_SSL") as ssl_class:
+                    ssl_smtp = ssl_class.return_value.__enter__.return_value
+                    result = mail_service.send_email(
+                        "customer@example.com",
+                        "Test",
+                        "İçerik",
+                    )
+
+        self.assertTrue(result.success)
+        ssl_class.assert_called_once()
+        self.assertEqual(ssl_class.call_args.args[:2], ("smtp.gmail.com", 465))
+        ssl_smtp.login.assert_called_once_with(
+            "authenticated@example.invalid",
+            "x" * 16,
+        )
+        ssl_smtp.send_message.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
