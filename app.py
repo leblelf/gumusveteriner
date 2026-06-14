@@ -48,6 +48,7 @@ from services.mail_service import (
     EmailResult,
     env_flag,
     get_mail_provider,
+    get_mail_status,
     mail_is_configured,
     send_email,
 )
@@ -2290,6 +2291,7 @@ def api_health():
             if os.environ.get("SQLITE_DB_PATH") and DB_PATH != DEFAULT_DB_PATH
             else "ephemeral-local"
         )
+    mail_status = get_mail_status()
     return api_response(
         True,
         "API çalışıyor",
@@ -2302,6 +2304,14 @@ def api_health():
             "sqlite_storage": sqlite_storage,
             "mail_provider": get_mail_provider(),
             "mail_configured": mail_is_configured(),
+            "mail_sender": mail_status["sender"],
+            "mail_smtp_host": mail_status["host"],
+            "mail_smtp_port": mail_status["port"],
+            "mail_smtp_tls": mail_status["tls"],
+            "mail_sender_matches_login": mail_status["sender_matches_login"],
+            "mail_app_password_format_valid": mail_status[
+                "app_password_format_valid"
+            ],
         },
     )
 

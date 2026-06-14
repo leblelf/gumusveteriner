@@ -31,6 +31,60 @@ class GmailSmtpServiceTests(unittest.TestCase):
         smtp.starttls.assert_called_once()
         smtp.login.assert_called_once_with(test_username, test_password)
         smtp.send_message.assert_called_once()
+        message = smtp.send_message.call_args.args[0]
+        self.assertIn(test_username, str(message["From"]))
+        self.assertEqual(message["Reply-To"], test_username)
+
+    def test_gmail_sender_is_always_authenticated_account(self):
+        environment = {
+            "SMTP_HOST": "smtp.gmail.com",
+            "SMTP_PORT": "587",
+            "SMTP_USERNAME": "authenticated@example.invalid",
+            "SMTP_PASSWORD": "x" * 16,
+            "SMTP_FROM": "different@example.invalid",
+            "SMTP_USE_TLS": "true",
+        }
+        with patch.dict(os.environ, environment, clear=False):
+            status = mail_service.get_mail_status()
+            with patch("services.mail_service.smtplib.SMTP") as smtp_class:
+                smtp = smtp_class.return_value.__enter__.return_value
+                result = mail_service.send_email(
+                    "customer@example.com",
+                    "Test",
+                    "İçerik",
+                )
+
+        self.assertTrue(result.success)
+        self.assertEqual(status["sender"], "authenticated@example.invalid")
+        self.assertTrue(status["sender_matches_login"])
+        message = smtp.send_message.call_args.args[0]
+        self.assertIn("authenticated@example.invalid", str(message["From"]))
+
+    def test_gmail_authentication_error_is_safe(self):
+        environment = {
+            "SMTP_HOST": "smtp.gmail.com",
+            "SMTP_PORT": "587",
+            "SMTP_USERNAME": "authenticated@example.invalid",
+            "SMTP_PASSWORD": "x" * 16,
+            "SMTP_FROM": "authenticated@example.invalid",
+            "SMTP_USE_TLS": "true",
+        }
+        with patch.dict(os.environ, environment, clear=False):
+            with patch("services.mail_service.smtplib.SMTP") as smtp_class:
+                smtp = smtp_class.return_value.__enter__.return_value
+                smtp.login.side_effect = mail_service.smtplib.SMTPAuthenticationError(
+                    535,
+                    b"Username and Password not accepted",
+                )
+                result = mail_service.send_email(
+                    "customer@example.com",
+                    "Test",
+                    "İçerik",
+                )
+
+        self.assertFalse(result.success)
+        self.assertIn("App Password", result.detail)
+        self.assertNotIn("xxxxxxxxxxxxxxxx", result.detail)
 
 
 if __name__ == "__main__":

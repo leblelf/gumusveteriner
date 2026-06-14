@@ -45,6 +45,8 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(payload["data"]["database_type"], "sqlite")
         self.assertEqual(payload["data"]["mail_provider"], "smtp")
         self.assertNotIn("SMTP_PASSWORD", payload["data"])
+        self.assertIn("mail_sender", payload["data"])
+        self.assertIn("mail_app_password_format_valid", payload["data"])
 
     def test_phone_validation_normalizes_turkish_number(self):
         self.assertEqual(
