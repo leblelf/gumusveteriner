@@ -1244,6 +1244,7 @@ def send_appointment_status_email(
             "Randevuya veya kullanıcı hesabına kayıtlı e-posta adresi yok",
         )
     status_text = {
+        "pending": "onay bekliyor olarak güncellendi",
         "confirmed": "onaylandı",
         "cancelled": "iptal edildi",
         "completed": "tamamlandı",
@@ -4256,6 +4257,7 @@ def api_admin_appointments_update(appointment_id: int):
         db.execute("UPDATE appointments SET status = ? WHERE id = ?", (status, appointment_id))
         if before["status"] != status:
             appointment_message = {
+                "pending": f"{before['appt_date']} {before['appt_time']} tarihli randevunuz onay bekliyor.",
                 "confirmed": f"{before['appt_date']} {before['appt_time']} tarihli randevunuz onaylandı.",
                 "cancelled": f"{before['appt_date']} {before['appt_time']} tarihli randevunuz iptal edildi.",
                 "completed": f"{before['appt_date']} {before['appt_time']} tarihli randevunuz tamamlandı.",
