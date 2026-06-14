@@ -2718,6 +2718,51 @@ class _AppointmentPageState extends State<AppointmentPage> {
         status;
   }
 
+  Future<void> updateAppointmentStatus(
+    Map<String, dynamic> appointment,
+    String status,
+  ) async {
+    try {
+      final response = await widget.api.request(
+        '${AppConstants.appointmentsUpdateEndpoint}/${appointment['id']}',
+        method: 'PATCH',
+        body: {'status': status},
+      );
+      if (!mounted) return;
+
+      final data = response['data'];
+      final mail = data is Map ? data['mail'] : null;
+      final mailSuccess = mail is Map && mail['success'] == true;
+      final recipient =
+          mail is Map ? mail['recipient']?.toString().trim() ?? '' : '';
+      final detail = mail is Map
+          ? (mail['detail'] ?? mail['message'])?.toString().trim() ?? ''
+          : '';
+      final statusText = appointmentStatusLabel(status);
+      final message = mailSuccess
+          ? 'Randevu $statusText olarak güncellendi. Bilgilendirme maili${recipient.isEmpty ? '' : ' $recipient adresine'} gönderildi.'
+          : 'Randevu $statusText olarak güncellendi ancak mail gönderilemedi${detail.isEmpty ? '.' : ': $detail'}';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor:
+              mailSuccess ? const Color(0xFF0F6E56) : const Color(0xFFC43D4B),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+      reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Randevu güncellenemedi: $error'),
+          backgroundColor: const Color(0xFFC43D4B),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -2785,11 +2830,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                             await deletePastAppointment(item);
                             return;
                           }
-                          await widget.api.request(
-                              '${AppConstants.appointmentsUpdateEndpoint}/${item['id']}',
-                              method: 'PATCH',
-                              body: {'status': action});
-                          reload();
+                          await updateAppointmentStatus(item, action);
                         },
                         itemBuilder: (_) => [
                           PopupMenuItem(

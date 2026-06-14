@@ -1173,6 +1173,24 @@ def order_with_items(db: sqlite3.Connection, order_id: int) -> dict | None:
     return payload
 
 
+def appointment_with_contact(
+    db: sqlite3.Connection,
+    appointment_id: int,
+) -> dict | None:
+    """Randevuyu, bildirim için kullanılabilecek üyelik e-postasıyla birlikte getirir."""
+    appointment = db.execute(
+        """
+        SELECT appointments.*,
+               COALESCE(NULLIF(appointments.email, ''), users.email) AS notification_email
+        FROM appointments
+        LEFT JOIN users ON users.id = appointments.user_id
+        WHERE appointments.id = ?
+        """,
+        (appointment_id,),
+    ).fetchone()
+    return row_to_dict(appointment) if appointment else None
+
+
 def send_order_status_email(order: dict, status: str) -> EmailResult:
     recipient = (
         order.get("notification_email")
@@ -1212,17 +1230,30 @@ def send_order_status_email(order: dict, status: str) -> EmailResult:
 def send_appointment_status_email(
     appointment: dict,
     status: str,
-) -> EmailResult | None:
+) -> EmailResult:
     """Randevu durumu değiştiğinde müşteriye güvenli bir bilgilendirme maili gönderir."""
-    if not appointment.get("email"):
-        return None
+    recipient = (
+        appointment.get("notification_email")
+        or appointment.get("email")
+        or ""
+    ).strip()
+    if not recipient:
+        return EmailResult(
+            False,
+            "E-posta gönderilemedi",
+            "Randevuya veya kullanıcı hesabına kayıtlı e-posta adresi yok",
+        )
     status_text = {
         "confirmed": "onaylandı",
         "cancelled": "iptal edildi",
         "completed": "tamamlandı",
     }.get(status)
     if not status_text:
-        return None
+        return EmailResult(
+            False,
+            "E-posta gönderilmedi",
+            "Bu randevu durumu için e-posta bildirimi tanımlı değil",
+        )
     subject = f"Gümüş Veteriner randevunuz {status_text}"
     body = (
         f"Merhaba {appointment.get('first_name', '')},\n\n"
@@ -1234,7 +1265,7 @@ def send_appointment_status_email(
         "Gümüş Veteriner Muayenehanesi\n"
         "0546 136 14 33"
     )
-    return send_email(appointment.get("email", ""), subject, body)
+    return send_email(recipient, subject, body)
 
 
 def api_response(success: bool, message: str, data=None, status: HTTPStatus = HTTPStatus.OK):
@@ -4240,22 +4271,33 @@ def api_admin_appointments_update(appointment_id: int):
                     appointment_id,
                 )
         db.commit()
-        appointment = db.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
-    appointment_payload = row_to_dict(appointment)
+        appointment_payload = appointment_with_contact(db, appointment_id)
     if before["status"] != status:
         mail_result = send_appointment_status_email(appointment_payload, status)
-        if mail_result and not mail_result.success:
+        if not mail_result.success:
             security_logger.error(
                 "appointment_mail_failed appointment_id=%s email=%s detail=%s",
                 appointment_id,
-                appointment_payload.get("email", ""),
+                appointment_payload.get("notification_email")
+                or appointment_payload.get("email", ""),
                 mail_result.detail or mail_result.message,
             )
-    if mail_result:
-        appointment_payload["mail"] = {
-            "success": mail_result.success,
-            "message": mail_result.message,
-        }
+    else:
+        mail_result = EmailResult(
+            False,
+            "E-posta gönderilmedi",
+            "Randevu durumu değişmediği için yeni bildirim oluşturulmadı",
+        )
+    appointment_payload["mail"] = {
+        "success": mail_result.success,
+        "message": mail_result.message,
+        "detail": mail_result.detail,
+        "recipient": (
+            appointment_payload.get("notification_email")
+            or appointment_payload.get("email")
+            or ""
+        ),
+    }
     log_admin_action("appointment_update", "appointment", appointment_id, f"status={status}")
     return api_response(True, "Randevu güncellendi", appointment_payload)
 

@@ -226,6 +226,78 @@ class BackendSmokeTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(appointment["status"], "confirmed")
 
+    def test_appointment_email_falls_back_to_member_account(self):
+        password_hash, password_salt = application.hash_password("Test123*")
+        with application.connect() as db:
+            user = db.execute(
+                """
+                INSERT INTO users
+                (full_name, email, phone, password_hash, password_salt, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "Randevu Üyesi",
+                    "member-appointment@example.com",
+                    "05000000006",
+                    password_hash,
+                    password_salt,
+                    "2026-06-14T10:00:00",
+                ),
+            )
+            appointment = db.execute(
+                """
+                INSERT INTO appointments
+                (user_id, first_name, last_name, phone, email, pet_type, pet_name,
+                 service, appt_date, appt_time, notes, status, created_at)
+                VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, '', 'pending', ?)
+                """,
+                (
+                    user.lastrowid,
+                    "Randevu",
+                    "Üyesi",
+                    "05000000006",
+                    "Kedi",
+                    "Mavi",
+                    "Muayene",
+                    "2026-08-01",
+                    "11:15",
+                    "2026-06-14T10:00:00",
+                ),
+            )
+            appointment_id = appointment.lastrowid
+            db.commit()
+            payload = application.appointment_with_contact(db, appointment_id)
+
+        self.assertEqual(
+            payload["notification_email"],
+            "member-appointment@example.com",
+        )
+        with patch(
+            "app.send_email",
+            return_value=application.EmailResult(True, "Mail gönderildi"),
+        ) as mocked_send:
+            result = application.send_appointment_status_email(
+                payload,
+                "confirmed",
+            )
+        self.assertTrue(result.success)
+        self.assertEqual(
+            mocked_send.call_args.args[0],
+            "member-appointment@example.com",
+        )
+
+    def test_appointment_without_email_returns_explicit_mail_error(self):
+        result = application.send_appointment_status_email(
+            {
+                "first_name": "Misafir",
+                "email": "",
+                "notification_email": "",
+            },
+            "confirmed",
+        )
+        self.assertFalse(result.success)
+        self.assertIn("kayıtlı e-posta", result.detail)
+
     def test_order_update_succeeds_when_mail_fails(self):
         with application.connect() as db:
             cursor = db.execute(
