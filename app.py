@@ -2366,6 +2366,9 @@ def api_health():
             "mail_app_password_format_valid": mail_status[
                 "app_password_format_valid"
             ],
+            "gmail_api_fallback_configured": mail_status[
+                "gmail_api_fallback_configured"
+            ],
         },
     )
 
