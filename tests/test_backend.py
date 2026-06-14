@@ -274,6 +274,65 @@ class BackendSmokeTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(order["status"], "shipped")
 
+    def test_order_email_falls_back_to_member_account(self):
+        password_hash, password_salt = application.hash_password("Test123*")
+        with application.connect() as db:
+            user = db.execute(
+                """
+                INSERT INTO users
+                (full_name, email, phone, password_hash, password_salt, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "Sipariş Üyesi",
+                    "member-order@example.com",
+                    "05000000005",
+                    password_hash,
+                    password_salt,
+                    "2026-06-14T10:00:00",
+                ),
+            )
+            order = db.execute(
+                """
+                INSERT INTO orders
+                (user_id, first_name, last_name, phone, email, address, total,
+                 status, created_at)
+                VALUES (?, ?, ?, ?, '', ?, ?, 'pending', ?)
+                """,
+                (
+                    user.lastrowid,
+                    "Sipariş",
+                    "Üyesi",
+                    "05000000005",
+                    "Samsun teslimat adresi",
+                    100.0,
+                    "2026-06-14T10:00:00",
+                ),
+            )
+            order_id = order.lastrowid
+            db.commit()
+            payload = application.order_with_items(db, order_id)
+
+        self.assertEqual(
+            payload["notification_email"],
+            "member-order@example.com",
+        )
+        with patch(
+            "app.send_email",
+            return_value=application.EmailResult(True, "Mail gönderildi"),
+        ) as mocked_send:
+            result = application.send_order_status_email(payload, "shipped")
+        self.assertTrue(result.success)
+        self.assertEqual(mocked_send.call_args.args[0], "member-order@example.com")
+
+    def test_order_without_email_returns_explicit_mail_error(self):
+        result = application.send_order_status_email(
+            {"id": 999, "first_name": "Misafir", "email": ""},
+            "shipped",
+        )
+        self.assertFalse(result.success)
+        self.assertIn("kayıtlı e-posta", result.detail)
+
     def test_member_order_returns_items_after_database_insert(self):
         with application.connect() as db:
             product = db.execute(

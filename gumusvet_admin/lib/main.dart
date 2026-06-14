@@ -4289,11 +4289,20 @@ class _OrdersPageState extends State<OrdersPage> {
     final mail =
         result['data'] is Map ? (result['data']['mail'] as Map?) : null;
     if (!mounted) return;
-    final extra = mail == null
-        ? ' Bildirim e-postası gönderilmedi.'
-        : ' E-posta: ${mail['message']}';
+    final mailSuccess = mail?['success'] == true;
+    final recipient = '${mail?['recipient'] ?? ''}'.trim();
+    final detail = '${mail?['detail'] ?? mail?['message'] ?? ''}'.trim();
+    final message = mailSuccess
+        ? 'Sipariş durumu güncellendi. E-posta gönderildi${recipient.isEmpty ? '' : ': $recipient'}.'
+        : 'Sipariş durumu güncellendi ancak e-posta gönderilemedi${detail.isEmpty ? '.' : ': $detail'}';
     ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Sipariş durumu güncellendi.$extra')));
+      SnackBar(
+        content: Text(message),
+        backgroundColor:
+            mailSuccess ? Colors.green.shade700 : Colors.red.shade700,
+        duration: const Duration(seconds: 6),
+      ),
+    );
     reload();
   }
 

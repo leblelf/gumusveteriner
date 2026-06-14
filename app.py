@@ -1144,7 +1144,16 @@ def ensure_google_oauth():
 
 
 def order_with_items(db: sqlite3.Connection, order_id: int) -> dict | None:
-    order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    order = db.execute(
+        """
+        SELECT orders.*,
+               COALESCE(NULLIF(orders.email, ''), users.email) AS notification_email
+        FROM orders
+        LEFT JOIN users ON users.id = orders.user_id
+        WHERE orders.id = ?
+        """,
+        (order_id,),
+    ).fetchone()
     if not order:
         return None
     payload = row_to_dict(order)
@@ -1164,9 +1173,18 @@ def order_with_items(db: sqlite3.Connection, order_id: int) -> dict | None:
     return payload
 
 
-def send_order_status_email(order: dict, status: str) -> EmailResult | None:
-    if not order.get("email"):
-        return None
+def send_order_status_email(order: dict, status: str) -> EmailResult:
+    recipient = (
+        order.get("notification_email")
+        or order.get("email")
+        or ""
+    ).strip()
+    if not recipient:
+        return EmailResult(
+            False,
+            "E-posta gönderilemedi",
+            "Siparişe veya kullanıcı hesabına kayıtlı e-posta adresi yok",
+        )
     status_text = {
         "confirmed": "onaylandı ve hazırlanıyor",
         "shipped": "kargoya verildi",
@@ -1174,7 +1192,11 @@ def send_order_status_email(order: dict, status: str) -> EmailResult | None:
         "cancelled": "iptal edildi",
     }.get(status)
     if not status_text:
-        return None
+        return EmailResult(
+            False,
+            "E-posta gönderilmedi",
+            "Bu sipariş durumu için e-posta bildirimi tanımlı değil",
+        )
     subject = f"Gümüş Veteriner siparişiniz {status_text} - #{order['id']}"
     body = (
         f"Merhaba {order.get('first_name', '')},\n\n"
@@ -1184,7 +1206,7 @@ def send_order_status_email(order: dict, status: str) -> EmailResult | None:
         "Gümüş Veteriner Muayenehanesi\n"
         "0546 136 14 33"
     )
-    return send_email(order.get("email", ""), subject, body)
+    return send_email(recipient, subject, body)
 
 
 def send_appointment_status_email(
@@ -3903,13 +3925,28 @@ def api_admin_orders_update(order_id: int):
             security_logger.error(
                 "order_status_mail_failed order_id=%s email=%s status=%s detail=%s",
                 order_id,
-                order.get("email", ""),
+                order.get("notification_email") or order.get("email", ""),
                 status,
                 mail_result.detail or mail_result.message,
             )
+    elif order:
+        mail_result = EmailResult(
+            False,
+            "E-posta gönderilmedi",
+            "Sipariş durumu değişmediği için yeni bildirim oluşturulmadı",
+        )
     data_payload = order or {}
     if mail_result:
-        data_payload["mail"] = {"success": mail_result.success, "message": mail_result.message}
+        data_payload["mail"] = {
+            "success": mail_result.success,
+            "message": mail_result.message,
+            "detail": mail_result.detail,
+            "recipient": (
+                order.get("notification_email") or order.get("email", "")
+                if order
+                else ""
+            ),
+        }
     return api_response(True, "Sipariş durumu güncellendi", data_payload)
 
 
