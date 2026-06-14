@@ -938,6 +938,26 @@ function googleLogin(){
   window.location.href=`/login/google?remember=${remember ? '1' : '0'}`;
 }
 
+async function forgotPassword(){
+  const loginEmail=document.getElementById('lemail')?.value.trim() || '';
+  const email=prompt('Şifre sıfırlama bağlantısının gönderileceği e-posta adresi:',loginEmail);
+  if(!email)return;
+  try{
+    const res=await fetch('/api/forgot-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email})
+    });
+    const payload=await res.json();
+    if(!res.ok || payload.success===false){
+      throw new Error(payload.message || 'Şifre sıfırlama isteği gönderilemedi.');
+    }
+    toast(payload.message || 'E-posta kayıtlıysa sıfırlama bağlantısı gönderildi.','ok');
+  }catch(e){
+    toast(e.message || 'Şifre sıfırlama isteği gönderilemedi.','err');
+  }
+}
+
 async function handlePasswordResetFromLink(){
   // Maildeki bağlantı siteyi reset_token parametresiyle açar; yeni şifreyi burada alırız.
   const params=new URLSearchParams(location.search);

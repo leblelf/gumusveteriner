@@ -69,22 +69,47 @@ Production ortamında `DATABASE_URL` tanımlanmalı ve PostgreSQL kullanılmalı
 Gizli bilgiler `.env` dosyasına veya Render Environment alanına yazılır; kaynak
 koda eklenmez.
 
-Temel değişkenler:
+## Environment Variables
+
+Production değerleri yalnızca Render Dashboard > Environment bölümünde
+tanımlanmalıdır. `.env` dosyası ve gerçek değerler GitHub'a gönderilmez.
+`.env.example` yalnız değişken adlarını gösterir.
 
 ```text
 SECRET_KEY=
 JWT_SECRET=
 DATABASE_URL=
-SITE_URL=https://wwwgumusvet.com
+MIGRATION_DATABASE_URL=
+SITE_URL=
+CORS_ORIGIN=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=
+MAIL_PROVIDER=
 SMTP_HOST=
-SMTP_PORT=587
+SMTP_PORT=
 SMTP_USERNAME=
 SMTP_PASSWORD=
 SMTP_FROM=
-SMTP_USE_TLS=true
+SMTP_USE_TLS=
+SMTP_TEST_RECIPIENT=
+DEBUG_MAIL_TEST=
+SMS_PROVIDER=
+NETGSM_USERCODE=
+NETGSM_PASSWORD=
+NETGSM_HEADER=
+INITIAL_ADMIN_EMAIL=
+INITIAL_ADMIN_PASSWORD=
+RATELIMIT_STORAGE_URI=
 ```
+
+Gmail gönderimi için `SMTP_PASSWORD` alanına normal Gmail şifresi değil,
+Google hesabından üretilen App Password yazılmalıdır. Bu değer README,
+ekran görüntüsü, test dosyası veya commit mesajında paylaşılmamalıdır.
+
+Mail sistemi `services/mail_service.py` içindedir. Şifre sıfırlama, randevu
+durumu ve sipariş/kargo durumu e-postaları aynı Gmail SMTP bağlantısını
+kullanır. SMTP hataları ana işlemi geri almaz; ayrıntı Render loglarına yazılır.
 
 ## Test ve Kontrol
 

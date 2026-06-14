@@ -44,7 +44,13 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
-from services.email_service import EmailResult, env_flag, send_email
+from services.mail_service import (
+    EmailResult,
+    env_flag,
+    get_mail_provider,
+    mail_is_configured,
+    send_email,
+)
 from services.database import normalize_database_url
 from services.sms_service import load_local_env, send_sms, validate_sms_message, normalize_tr_phone
 
@@ -702,8 +708,11 @@ def verify_password(password: str, password_hash: str, password_salt: str) -> bo
 
 def seed_admin(db: sqlite3.Connection) -> None:
     """İlk kurulumda Environment üzerinden verilen admin hesabını oluşturur."""
-    email = (os.environ.get("INITIAL_ADMIN_EMAIL") or "gumusveterinermuayenehanesi@gmail.com").strip().lower()
+    email = (os.environ.get("INITIAL_ADMIN_EMAIL") or "").strip().lower()
     initial_password = (os.environ.get("INITIAL_ADMIN_PASSWORD") or "").strip()
+    if not email:
+        security_logger.warning("initial_admin_skipped INITIAL_ADMIN_EMAIL tanımlı değil")
+        return
     old_email = "admin@gumusveteriner.com"
     now = datetime.now().isoformat(timespec="seconds")
     current = db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
@@ -739,8 +748,11 @@ def seed_admin(db: sqlite3.Connection) -> None:
 
 def seed_api_admin(db: sqlite3.Connection) -> None:
     """Mobil/masaüstü admin uygulaması için ilk JWT admin hesabını oluşturur."""
-    username = (os.environ.get("INITIAL_ADMIN_EMAIL") or "gumusveterinermuayenehanesi@gmail.com").strip().lower()
+    username = (os.environ.get("INITIAL_ADMIN_EMAIL") or "").strip().lower()
     initial_password = (os.environ.get("INITIAL_ADMIN_PASSWORD") or "").strip()
+    if not username:
+        security_logger.warning("initial_api_admin_skipped INITIAL_ADMIN_EMAIL tanımlı değil")
+        return
     legacy_username = "admin"
     current = db.execute("SELECT id FROM admins WHERE username = ?", (username,)).fetchone()
     legacy = db.execute("SELECT id FROM admins WHERE username = ?", (legacy_username,)).fetchone()
@@ -1172,6 +1184,34 @@ def send_order_status_email(order: dict, status: str) -> EmailResult | None:
         "0546 136 14 33"
     )
     return send_email(order.get("email", ""), subject, body)
+
+
+def send_appointment_status_email(
+    appointment: dict,
+    status: str,
+) -> EmailResult | None:
+    """Randevu durumu değiştiğinde müşteriye güvenli bir bilgilendirme maili gönderir."""
+    if not appointment.get("email"):
+        return None
+    status_text = {
+        "confirmed": "onaylandı",
+        "cancelled": "iptal edildi",
+        "completed": "tamamlandı",
+    }.get(status)
+    if not status_text:
+        return None
+    subject = f"Gümüş Veteriner randevunuz {status_text}"
+    body = (
+        f"Merhaba {appointment.get('first_name', '')},\n\n"
+        f"{appointment.get('appt_date', '')} tarihinde "
+        f"{appointment.get('appt_time', '')} saatindeki "
+        f"randevunuz {status_text}.\n"
+        f"Hizmet: {appointment.get('service') or 'Veteriner muayenesi'}\n"
+        f"Hayvan: {appointment.get('pet_name') or appointment.get('pet_type') or '-'}\n\n"
+        "Gümüş Veteriner Muayenehanesi\n"
+        "0546 136 14 33"
+    )
+    return send_email(appointment.get("email", ""), subject, body)
 
 
 def api_response(success: bool, message: str, data=None, status: HTTPStatus = HTTPStatus.OK):
@@ -2253,6 +2293,8 @@ def api_health():
             "runtime_database": database_type,
             "configured_database": database_type,
             "sqlite_storage": sqlite_storage,
+            "mail_provider": get_mail_provider(),
+            "mail_configured": mail_is_configured(),
         },
     )
 
@@ -2286,6 +2328,7 @@ def robots_txt() -> Response:
     """Arama motorlarına tarama izni ve sitemap adresini bildirir."""
     content = f"""User-agent: *
 Allow: /
+Allow: /static/logo.jpeg
 
 Sitemap: {SITE_URL}/sitemap.xml
 """
@@ -2302,18 +2345,30 @@ def sitemap_xml() -> Response:
         (f"{SITE_URL}/urunler", "0.8", "weekly"),
         (f"{SITE_URL}/iletisim", "0.7", "monthly"),
     ]
-    url_nodes = "\n".join(
-        f"""  <url>
+    url_nodes = []
+    for loc, priority, changefreq in urls:
+        logo_image = (
+            f"""
+    <image:image>
+      <image:loc>{SITE_URL}/static/logo.jpeg</image:loc>
+      <image:title>Gümüş Veteriner logosu</image:title>
+    </image:image>"""
+            if loc == SITE_URL
+            else ""
+        )
+        url_nodes.append(
+            f"""  <url>
     <loc>{loc}</loc>
     <lastmod>{today}</lastmod>
     <changefreq>{changefreq}</changefreq>
     <priority>{priority}</priority>
+{logo_image}
   </url>"""
-        for loc, priority, changefreq in urls
-    )
+        )
     content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-{url_nodes}
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+{chr(10).join(url_nodes)}
 </urlset>
 """
     return Response(content, content_type="application/xml; charset=utf-8")
@@ -2450,6 +2505,96 @@ def api_test_mail():
         return api_response(False, "Test maili gönderilemedi. Render loglarını kontrol edin.", None, HTTPStatus.BAD_GATEWAY)
     security_logger.info("smtp_test_mail_sent email=%s", recipient)
     return api_response(True, "Test maili gönderildi", {"email": recipient})
+
+
+@app.route("/api/forgot-password", methods=["POST"])
+@limiter.limit("3 per hour")
+def api_forgot_password():
+    """Kullanıcı hesabını açıklamadan 30 dakikalık tek kullanımlık bağlantı gönderir."""
+    generic_message = (
+        "Bu e-posta kayıtlıysa şifre sıfırlama bağlantısı gönderildi."
+    )
+    data = request.get_json(silent=True) or {}
+    try:
+        email = validate_email(data.get("email", ""))
+    except ValueError:
+        # Kullanıcı var/yok bilgisini ve e-posta doğrulama ayrıntısını dışarı sızdırmayız.
+        security_logger.info(
+            "password_reset_requested invalid_email ip=%s",
+            request.remote_addr or "",
+        )
+        return api_response(True, generic_message, {})
+
+    with connect() as db:
+        user = db.execute(
+            "SELECT id, full_name, email FROM users WHERE LOWER(email) = LOWER(?)",
+            (email,),
+        ).fetchone()
+        if not user:
+            security_logger.info(
+                "password_reset_requested unknown_email=%s ip=%s",
+                email,
+                request.remote_addr or "",
+            )
+            return api_response(True, generic_message, {})
+
+        raw_token = secrets.token_urlsafe(48)
+        token_hash = hash_reset_token(raw_token)
+        now = datetime.now()
+        expires_at = now + timedelta(minutes=30)
+        db.execute(
+            """
+            UPDATE password_resets
+            SET used_at = ?
+            WHERE user_id = ? AND used_at IS NULL
+            """,
+            (now.isoformat(timespec="seconds"), user["id"]),
+        )
+        db.execute(
+            """
+            INSERT INTO password_resets
+            (token, user_id, expires_at, used_at, created_at)
+            VALUES (?, ?, ?, NULL, ?)
+            """,
+            (
+                token_hash,
+                user["id"],
+                expires_at.isoformat(timespec="seconds"),
+                now.isoformat(timespec="seconds"),
+            ),
+        )
+        db.commit()
+
+    reset_url = f"{SITE_URL}/?reset_token={raw_token}"
+    body = (
+        f"Merhaba {user['full_name'] or ''},\n\n"
+        "Gümüş Veteriner hesabınız için şifre sıfırlama talebi aldık.\n"
+        "Aşağıdaki bağlantı 30 dakika boyunca ve yalnızca bir kez kullanılabilir:\n\n"
+        f"{reset_url}\n\n"
+        "Bu talebi siz yapmadıysanız bu e-postayı dikkate almayın.\n\n"
+        "Gümüş Veteriner Muayenehanesi\n"
+        "0546 136 14 33"
+    )
+    mail_result = send_email(
+        user["email"],
+        "Gümüş Veteriner şifre sıfırlama bağlantısı",
+        body,
+    )
+    if mail_result.success:
+        security_logger.info(
+            "password_reset_mail_sent user_id=%s email=%s",
+            user["id"],
+            email,
+        )
+    else:
+        # Güvenli genel cevap korunur; gerçek SMTP hatası Render loglarında bulunur.
+        security_logger.error(
+            "password_reset_mail_failed user_id=%s email=%s detail=%s",
+            user["id"],
+            email,
+            mail_result.detail or mail_result.message,
+        )
+    return api_response(True, generic_message, {})
 
 
 @app.route("/api/reset-password", methods=["POST"])
@@ -3737,6 +3882,14 @@ def api_admin_orders_update(order_id: int):
         order = order_with_items(db, order_id)
     if order and before["status"] != status:
         mail_result = send_order_status_email(order, status)
+        if mail_result and not mail_result.success:
+            security_logger.error(
+                "order_status_mail_failed order_id=%s email=%s status=%s detail=%s",
+                order_id,
+                order.get("email", ""),
+                status,
+                mail_result.detail or mail_result.message,
+            )
     data_payload = order or {}
     if mail_result:
         data_payload["mail"] = {"success": mail_result.success, "message": mail_result.message}
@@ -4010,6 +4163,7 @@ def api_admin_appointments_update(appointment_id: int):
     status = data.get("status")
     if status not in {"pending", "confirmed", "cancelled", "completed"}:
         return api_response(False, "Geçersiz randevu durumu", None, HTTPStatus.BAD_REQUEST)
+    mail_result = None
     with connect() as db:
         before = db.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
         if not before:
@@ -4033,8 +4187,23 @@ def api_admin_appointments_update(appointment_id: int):
                 )
         db.commit()
         appointment = db.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
+    appointment_payload = row_to_dict(appointment)
+    if before["status"] != status:
+        mail_result = send_appointment_status_email(appointment_payload, status)
+        if mail_result and not mail_result.success:
+            security_logger.error(
+                "appointment_mail_failed appointment_id=%s email=%s detail=%s",
+                appointment_id,
+                appointment_payload.get("email", ""),
+                mail_result.detail or mail_result.message,
+            )
+    if mail_result:
+        appointment_payload["mail"] = {
+            "success": mail_result.success,
+            "message": mail_result.message,
+        }
     log_admin_action("appointment_update", "appointment", appointment_id, f"status={status}")
-    return api_response(True, "Randevu güncellendi", row_to_dict(appointment))
+    return api_response(True, "Randevu güncellendi", appointment_payload)
 
 
 @app.route("/api/admin/appointments/delete/<int:appointment_id>", methods=["DELETE"])

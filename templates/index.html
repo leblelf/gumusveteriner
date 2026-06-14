@@ -21,10 +21,62 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="google-site-verification" content="mVumjOtOBphEHVbqwBEN3hcEYQWaJCcSEeCQoVSuHCU" />
 <title>Gümüş Veteriner Samsun | Gümüş Vet</title>
-<meta name="description" content="Gümüş Veteriner, Samsun veteriner kliniği olarak kedi ve köpek sağlığı için muayene, randevu ve koruyucu bakım hizmetleri sunar.">
+<meta name="description" content="Samsun veteriner kliniği, evcil hayvan sağlığı, muayene ve bakım hizmetleri.">
 <meta name="robots" content="index, follow">
 <meta name="csrf-token" content="{{ csrf_token }}">
 <link rel="canonical" href="https://wwwgumusvet.com">
+<link rel="icon" href="/static/logo.jpeg" type="image/jpeg">
+<link rel="apple-touch-icon" href="/static/logo.jpeg">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="tr_TR">
+<meta property="og:title" content="Gümüş Veteriner Samsun | Gümüş Vet">
+<meta property="og:description" content="Samsun veteriner kliniği, evcil hayvan sağlığı, muayene ve bakım hizmetleri.">
+<meta property="og:image" content="https://wwwgumusvet.com/static/logo.jpeg">
+<meta property="og:image:alt" content="Gümüş Veteriner logosu">
+<meta property="og:url" content="https://wwwgumusvet.com">
+<meta property="og:site_name" content="Gümüş Veteriner">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Gümüş Veteriner Samsun | Gümüş Vet">
+<meta name="twitter:description" content="Samsun veteriner kliniği, evcil hayvan sağlığı, muayene ve bakım hizmetleri.">
+<meta name="twitter:image" content="https://wwwgumusvet.com/static/logo.jpeg">
+<meta name="twitter:image:alt" content="Gümüş Veteriner logosu">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "VeterinaryCare",
+  "name": "Gümüş Veteriner",
+  "url": "https://wwwgumusvet.com",
+  "logo": "https://wwwgumusvet.com/static/logo.jpeg",
+  "image": "https://wwwgumusvet.com/static/logo.jpeg",
+  "telephone": "+90 546 136 14 33",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "Toptepe, Kayaaltı Sk. No:10/1",
+    "postalCode": "55000",
+    "addressLocality": "Canik",
+    "addressRegion": "Samsun",
+    "addressCountry": "TR"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "Gümüş Veteriner",
+  "alternateName": "Gümüş Vet",
+  "url": "https://wwwgumusvet.com",
+  "inLanguage": "tr-TR",
+  "publisher": {
+    "@type": "Organization",
+    "name": "Gümüş Veteriner",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://wwwgumusvet.com/static/logo.jpeg"
+    }
+  }
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/style.css?v={{ asset_version|default('local') }}">
@@ -376,6 +428,7 @@
             <label>Şifre</label>
             <input type="password" id="lpass" placeholder="Şifreniz" data-password-input>
             <label class="remember-row"><input type="checkbox" id="rememberMe"> Beni hatırla</label>
+            <button class="forgot-link" type="button" onclick="forgotPassword()">Şifremi unuttum</button>
             <button class="btn-submit" id="loginBtn" type="button" onclick="submitLogin()">Giriş Yap</button>
             <button class="google-login-btn" type="button" onclick="googleLogin()"><span>G</span> Google hesabı ile giriş yap</button>
             <div class="msg-ok" id="loginOk"></div>

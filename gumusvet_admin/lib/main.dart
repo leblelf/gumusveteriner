@@ -222,8 +222,7 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final username =
-      TextEditingController(text: 'gumusveterinermuayenehanesi@gmail.com');
+  final username = TextEditingController();
   final password = TextEditingController();
   bool loading = false;
   bool rememberMe = true;
@@ -5634,7 +5633,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
           await widget.api.request(AppConstants.adminProfileEndpoint);
       email.text = response['data']?['email']?.toString() ?? '';
     } catch (_) {
-      email.text = 'gumusveterinermuayenehanesi@gmail.com';
+      email.text = '';
     }
     if (mounted) setState(() => loading = false);
   }

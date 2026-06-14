@@ -7,7 +7,7 @@ Render web servisi Internal Database URL kullanır. Bu betik bilgisayarda
 çalıştırıldığı için Render External Database URL değerine ihtiyaç duyar.
 
 Kullanım:
-    .env dosyasına MIGRATION_DATABASE_URL=postgresql://... ekleyin.
+    MIGRATION_DATABASE_URL değerini yerel environment üzerinden tanımlayın.
     python scripts/migrate_sqlite_to_postgres.py
 """
 

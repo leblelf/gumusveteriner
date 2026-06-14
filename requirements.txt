@@ -14,3 +14,4 @@ SQLAlchemy==2.0.44
 psycopg[binary]==3.2.12
 psycopg2-binary==2.9.11
 python-dotenv==1.2.1
+# Gmail SMTP gönderimi Python'un smtplib/email standart kütüphanesini kullanır.
