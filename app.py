@@ -94,6 +94,7 @@ DEPLOY_VERSION = (
     or "local"
 )[:12]
 SITE_URL = (os.environ.get("SITE_URL") or "https://wwwgumusvet.com").rstrip("/")
+DEFAULT_ADMIN_EMAIL = "gumusveterinermuayenehanesi@gmail.com"
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", 5 * 1024 * 1024))
 ALLOWED_UPLOAD_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
 ALLOWED_UPLOAD_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
@@ -710,7 +711,7 @@ def verify_password(password: str, password_hash: str, password_salt: str) -> bo
 
 def seed_admin(db: sqlite3.Connection) -> None:
     """İlk kurulumda Environment üzerinden verilen admin hesabını oluşturur."""
-    email = (os.environ.get("INITIAL_ADMIN_EMAIL") or "").strip().lower()
+    email = (os.environ.get("INITIAL_ADMIN_EMAIL") or DEFAULT_ADMIN_EMAIL).strip().lower()
     initial_password = (os.environ.get("INITIAL_ADMIN_PASSWORD") or "").strip()
     if not email:
         security_logger.warning("initial_admin_skipped INITIAL_ADMIN_EMAIL tanımlı değil")
@@ -750,7 +751,7 @@ def seed_admin(db: sqlite3.Connection) -> None:
 
 def seed_api_admin(db: sqlite3.Connection) -> None:
     """Mobil/masaüstü admin uygulaması için ilk JWT admin hesabını oluşturur."""
-    username = (os.environ.get("INITIAL_ADMIN_EMAIL") or "").strip().lower()
+    username = (os.environ.get("INITIAL_ADMIN_EMAIL") or DEFAULT_ADMIN_EMAIL).strip().lower()
     initial_password = (os.environ.get("INITIAL_ADMIN_PASSWORD") or "").strip()
     if not username:
         security_logger.warning("initial_api_admin_skipped INITIAL_ADMIN_EMAIL tanımlı değil")
