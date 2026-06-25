@@ -721,12 +721,40 @@ def seed_admin(db: sqlite3.Connection) -> None:
     current = db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
     old = db.execute("SELECT id FROM users WHERE email = ?", (old_email,)).fetchone()
     if current:
+        password_hash = password_salt = None
+        if initial_password:
+            password_hash, password_salt = hash_password(initial_password)
+        if password_hash:
+            db.execute(
+                """
+                UPDATE users
+                SET full_name = ?, role = 'admin', is_banned = 0,
+                    password_hash = ?, password_salt = ?
+                WHERE id = ?
+                """,
+                ("Gümüş Veteriner Muayenehanesi", password_hash, password_salt, current["id"]),
+            )
+            return
         db.execute(
             "UPDATE users SET full_name = ?, role = 'admin', is_banned = 0 WHERE id = ?",
             ("Gümüş Veteriner Muayenehanesi", current["id"]),
         )
         return
     if old:
+        password_hash = password_salt = None
+        if initial_password:
+            password_hash, password_salt = hash_password(initial_password)
+        if password_hash:
+            db.execute(
+                """
+                UPDATE users
+                SET full_name = ?, email = ?, role = 'admin', is_banned = 0,
+                    password_hash = ?, password_salt = ?
+                WHERE id = ?
+                """,
+                ("Gümüş Veteriner Muayenehanesi", email, password_hash, password_salt, old["id"]),
+            )
+            return
         db.execute(
             """
             UPDATE users
@@ -760,14 +788,25 @@ def seed_api_admin(db: sqlite3.Connection) -> None:
     current = db.execute("SELECT id FROM admins WHERE username = ?", (username,)).fetchone()
     legacy = db.execute("SELECT id FROM admins WHERE username = ?", (legacy_username,)).fetchone()
     if current:
+        if initial_password:
+            db.execute(
+                "UPDATE admins SET password_hash = ? WHERE id = ?",
+                (generate_password_hash(initial_password), current["id"]),
+            )
         if legacy:
             db.execute("DELETE FROM admins WHERE id = ?", (legacy["id"],))
         return
     if legacy:
-        db.execute(
-            "UPDATE admins SET username = ? WHERE id = ?",
-            (username, legacy["id"]),
-        )
+        if initial_password:
+            db.execute(
+                "UPDATE admins SET username = ?, password_hash = ? WHERE id = ?",
+                (username, generate_password_hash(initial_password), legacy["id"]),
+            )
+        else:
+            db.execute(
+                "UPDATE admins SET username = ? WHERE id = ?",
+                (username, legacy["id"]),
+            )
         return
     if not initial_password:
         security_logger.warning("initial_api_admin_skipped INITIAL_ADMIN_PASSWORD tanımlı değil")
