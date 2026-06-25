@@ -21,6 +21,10 @@
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
+  function csrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || "";
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -45,6 +49,8 @@
       "Content-Type": "application/json",
       ...(options.headers || {}),
     };
+    const tokenForCsrf = csrfToken();
+    if (tokenForCsrf) headers["X-CSRF-Token"] = tokenForCsrf;
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
     const response = await fetch(path, {
       ...options,
