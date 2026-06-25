@@ -597,6 +597,8 @@ def csrf_required_for_request() -> bool:
     """Tarayicidan gelen state-changing isteklerde CSRF kontrolunu zorunlu tutar."""
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return False
+    if request.path == "/api/admin/login":
+        return False
     if not request.path.startswith("/api/"):
         return False
     if request.headers.get("Authorization", "").startswith("Bearer "):
@@ -4216,9 +4218,17 @@ def api_admin_login():
     password = data.get("password") or ""
     if not username or not password:
         return api_response(False, "Kullanıcı adı ve şifre zorunlu", None, HTTPStatus.BAD_REQUEST)
+    configured_admin_username = (os.environ.get("INITIAL_ADMIN_EMAIL") or DEFAULT_ADMIN_EMAIL).strip().lower()
+    login_usernames = [username]
+    if username == "admin" and configured_admin_username not in login_usernames:
+        login_usernames.append(configured_admin_username)
 
     with connect() as db:
-        admin = db.execute("SELECT * FROM admins WHERE username = ?", (username,)).fetchone()
+        placeholders = ", ".join("?" for _ in login_usernames)
+        admin = db.execute(
+            f"SELECT * FROM admins WHERE username IN ({placeholders}) ORDER BY CASE WHEN username = ? THEN 0 ELSE 1 END LIMIT 1",
+            (*login_usernames, username),
+        ).fetchone()
         if admin and check_password_hash(admin["password_hash"], password):
             log_admin_login_attempt(username, True)
             token = create_admin_jwt(admin["id"], admin["username"])
@@ -4237,7 +4247,10 @@ def api_admin_login():
             )
             return flask_response
 
-        legacy = db.execute("SELECT * FROM users WHERE email = ?", (username.lower(),)).fetchone()
+        legacy = db.execute(
+            f"SELECT * FROM users WHERE email IN ({placeholders}) ORDER BY CASE WHEN email = ? THEN 0 ELSE 1 END LIMIT 1",
+            (*login_usernames, username),
+        ).fetchone()
         if legacy and legacy["role"] == "admin" and not legacy["is_banned"] and verify_password(password, legacy["password_hash"], legacy["password_salt"]):
             log_admin_login_attempt(username, True)
             token = create_admin_jwt(legacy["id"], legacy["email"])
