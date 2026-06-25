@@ -94,10 +94,7 @@
       });
       state.token = data.token;
       localStorage.setItem("gumusAdminToken", state.token);
-      document.body.dataset.loginOnly = "false";
-      history.replaceState(null, "", "/admin");
-      showApp();
-      await loadDashboard();
+      window.location.href = "/admin";
     } catch (error) {
       message.textContent = error.message;
     }
@@ -500,18 +497,6 @@
     bindEvents();
     setTheme(localStorage.getItem("gumusAdminTheme") || "light");
     if (document.body.dataset.loginOnly === "true") {
-      if (state.token) {
-        try {
-          showApp();
-          await loadDashboard();
-          document.body.dataset.loginOnly = "false";
-          history.replaceState(null, "", "/admin");
-          return;
-        } catch (_) {
-          localStorage.removeItem("gumusAdminToken");
-          state.token = "";
-        }
-      }
       showLoginOnly();
       return;
     }

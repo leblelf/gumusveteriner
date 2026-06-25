@@ -4243,6 +4243,7 @@ def api_admin_login():
                 secure=IS_PRODUCTION,
                 httponly=True,
                 samesite="Lax",
+                path="/",
                 max_age=60 * 60 * 24 * 7,
             )
             return flask_response
@@ -4265,6 +4266,7 @@ def api_admin_login():
                 secure=IS_PRODUCTION,
                 httponly=True,
                 samesite="Lax",
+                path="/",
                 max_age=60 * 60 * 24 * 7,
             )
             return flask_response
@@ -4278,7 +4280,7 @@ def api_admin_login():
 def api_admin_logout():
     response, status = api_response(True, "Çıkış yapıldı", {})
     flask_response = make_response(jsonify(response), status)
-    flask_response.delete_cookie("admin_token")
+    flask_response.delete_cookie("admin_token", path="/")
     return flask_response
 
 
