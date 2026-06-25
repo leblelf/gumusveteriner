@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlparse
 
 import jwt
 from authlib.integrations.flask_client import OAuth
-from flask import Flask, Response, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, send_from_directory, session, url_for
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.errors import RateLimitExceeded
@@ -517,6 +517,7 @@ def init_db() -> None:
         ensure_column(db, "appointments", "clinic_pet_id", "INTEGER")
         ensure_column(db, "orders", "payment_last4", "TEXT")
         ensure_column(db, "orders", "payment_status", "TEXT")
+        ensure_column(db, "orders", "tracking_number", "TEXT")
         ensure_column(db, "orders", "admin_hidden", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(db, "appointments", "admin_hidden", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(db, "appointments", "admin_pet_hidden", "INTEGER NOT NULL DEFAULT 0")
@@ -1302,13 +1303,32 @@ def require_admin_api(func):
     @limiter.limit("60 per minute")
     @wraps(func)
     def wrapper(*args, **kwargs):
-        auth = request.headers.get("Authorization", "")
-        token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
-        payload = decode_admin_jwt(token)
-        if not payload:
+        if not current_admin_payload():
             body, status = api_response(False, "Admin yetkisi gerekli", None, HTTPStatus.UNAUTHORIZED)
             return body, status
         return func(*args, **kwargs)
+    return wrapper
+
+
+def current_admin_payload() -> dict | None:
+    """Web admin panelinin cookie veya Authorization header üzerinden admini tanımasını sağlar."""
+    auth = request.headers.get("Authorization", "")
+    token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+    if not token:
+        token = request.cookies.get("admin_token", "")
+    return decode_admin_jwt(token) if token else None
+
+
+def require_admin_page(func):
+    """Tarayıcıdan açılan admin sayfalarını normal üyelerden ve misafirlerden korur."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if current_admin_payload():
+            return func(*args, **kwargs)
+        user = get_request_session_user()
+        if user and user["role"] != "admin":
+            return Response("Bu panel yalnızca yöneticiler içindir.", status=HTTPStatus.FORBIDDEN)
+        return redirect("/admin/login")
     return wrapper
 
 
@@ -2302,12 +2322,40 @@ def handle_unexpected_error(error):
 @app.route("/hizmetler")
 @app.route("/urunler")
 @app.route("/iletisim")
-@app.route("/admin")
-@app.route("/admin/login")
 @app.route("/403")
 def serve_app_index() -> str:
     # Tüm tek sayfa uygulama route'ları aynı index.html dosyasını kullanır.
     return render_template("index.html", asset_version=DEPLOY_VERSION, csrf_token=get_csrf_token())
+
+
+@app.route("/admin")
+@require_admin_page
+def admin_panel() -> str:
+    """Tarayıcı üzerinden çalışan modern web admin panelini açar."""
+    payload = current_admin_payload() or {}
+    return render_template(
+        "admin.html",
+        asset_version=DEPLOY_VERSION,
+        csrf_token=get_csrf_token(),
+        admin_username=payload.get("username", "admin"),
+    )
+
+
+@app.route("/admin/login")
+def admin_login_page() -> str:
+    """Web admin giriş ekranı; başarılı girişten sonra /admin paneline döner."""
+    if current_admin_payload():
+        return redirect("/admin")
+    user = get_request_session_user()
+    if user and user["role"] != "admin":
+        return Response("Bu panel yalnızca yöneticiler içindir.", status=HTTPStatus.FORBIDDEN)
+    return render_template(
+        "admin.html",
+        asset_version=DEPLOY_VERSION,
+        csrf_token=get_csrf_token(),
+        admin_username="",
+        login_only=True,
+    )
 
 
 @app.route("/ürünler")
@@ -3369,6 +3417,83 @@ def api_admin_pets_add():
     return api_response(True, "Pet kaydedildi", row_to_dict(pet), HTTPStatus.CREATED)
 
 
+@app.route("/api/admin/pets/update/<string:source>/<int:pet_id>", methods=["PUT", "PATCH"])
+@require_admin_api
+def api_admin_pets_update(source: str, pet_id: int):
+    """Web admin panelinden gelen hasta kartı düzenlemelerini kaydeder."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    species = (data.get("species") or "").strip()
+    if not name or not species:
+        return api_response(False, "Pet adı ve türü zorunludur", None, HTTPStatus.BAD_REQUEST)
+
+    with connect() as db:
+        if source == "clinic":
+            cursor = db.execute(
+                """
+                UPDATE clinic_pets
+                SET name = ?, species = ?, breed = ?, age = ?, owner_name = ?,
+                    phone = ?, notes = ?, admin_hidden = 0
+                WHERE id = ?
+                """,
+                (
+                    name,
+                    species,
+                    (data.get("breed") or "").strip(),
+                    (data.get("age") or "").strip(),
+                    (data.get("owner_name") or data.get("owner") or "").strip(),
+                    (data.get("phone") or "").strip(),
+                    (data.get("notes") or "").strip(),
+                    pet_id,
+                ),
+            )
+        elif source == "profile":
+            cursor = db.execute(
+                """
+                UPDATE pets
+                SET name = ?, species = ?, age = ?, notes = ?, admin_hidden = 0
+                WHERE id = ?
+                """,
+                (
+                    name,
+                    species,
+                    (data.get("age") or "").strip(),
+                    (data.get("notes") or "").strip(),
+                    pet_id,
+                ),
+            )
+        elif source == "appointment":
+            owner_parts = (data.get("owner_name") or data.get("owner") or "").strip().split(" ", 1)
+            first_name = owner_parts[0] if owner_parts else ""
+            last_name = owner_parts[1] if len(owner_parts) > 1 else ""
+            cursor = db.execute(
+                """
+                UPDATE appointments
+                SET pet_name = ?, pet_type = ?, first_name = ?, last_name = ?,
+                    phone = ?, notes = ?, admin_pet_hidden = 0
+                WHERE id = ?
+                """,
+                (
+                    name,
+                    species,
+                    first_name,
+                    last_name,
+                    (data.get("phone") or "").strip(),
+                    (data.get("notes") or "").strip(),
+                    pet_id,
+                ),
+            )
+        else:
+            return api_response(False, "Geçersiz pet kaynağı", None, HTTPStatus.BAD_REQUEST)
+
+        if cursor.rowcount < 1:
+            return api_response(False, "Pet bulunamadı", None, HTTPStatus.NOT_FOUND)
+        db.commit()
+
+    log_admin_action("pet_update", "pet", pet_id, f"source={source}")
+    return api_response(True, "Pet güncellendi", {})
+
+
 @app.route("/api/admin/pets/delete/<string:source>/<int:pet_id>", methods=["DELETE"])
 @require_admin_api
 def api_admin_pets_delete(source: str, pet_id: int):
@@ -3773,6 +3898,10 @@ def api_admin_dashboard():
         active_hospitalizations = first_column(db.execute(
             "SELECT COUNT(*) FROM hospitalizations WHERE status = 'active'"
         ).fetchone())
+        total_users = first_column(db.execute("SELECT COUNT(*) FROM users").fetchone())
+        total_products = first_column(db.execute("SELECT COUNT(*) FROM products").fetchone())
+        total_appointments = first_column(db.execute("SELECT COUNT(*) FROM appointments").fetchone())
+        total_orders = first_column(db.execute("SELECT COUNT(*) FROM orders").fetchone())
 
     current_total = monthly.get(now.strftime("%Y-%m"), 0.0)
     previous_key = (date(now.year, now.month, 1) - timedelta(days=1)).strftime("%Y-%m")
@@ -3819,6 +3948,10 @@ def api_admin_dashboard():
         True,
         "Dashboard verileri hazır",
         {
+            "total_users": total_users,
+            "total_products": total_products,
+            "total_appointments": total_appointments,
+            "total_orders": total_orders,
             "total_pets": total_pets,
             "active_hospitalizations": active_hospitalizations,
             "monthly_sales": [
@@ -3932,15 +4065,27 @@ def api_admin_orders_update(order_id: int):
     data = request.get_json(silent=True) or {}
     status = (data.get("status") or "").strip()
     allowed = {"pending", "confirmed", "shipped", "delivered", "cancelled"}
-    if status not in allowed:
+    if status and status not in allowed:
         return api_response(False, "Geçersiz sipariş durumu", None, HTTPStatus.BAD_REQUEST)
+    tracking_number = (data.get("tracking_number") or "").strip()
+    if not status and "tracking_number" not in data:
+        return api_response(False, "Güncellenecek alan yok", None, HTTPStatus.BAD_REQUEST)
     mail_result = None
     with connect() as db:
         before = db.execute("SELECT status FROM orders WHERE id = ?", (order_id,)).fetchone()
         if not before:
             return api_response(False, "Sipariş bulunamadı", None, HTTPStatus.NOT_FOUND)
-        db.execute("UPDATE orders SET status = ? WHERE id = ?", (status, order_id))
-        if before["status"] != status:
+        updates = []
+        params = []
+        if status:
+            updates.append("status = ?")
+            params.append(status)
+        if "tracking_number" in data:
+            updates.append("tracking_number = ?")
+            params.append(tracking_number)
+        params.append(order_id)
+        db.execute(f"UPDATE orders SET {', '.join(updates)} WHERE id = ?", params)
+        if status and before["status"] != status:
             order_message = {
                 "confirmed": "Siparişiniz onaylandı ve hazırlanıyor.",
                 "shipped": "Siparişiniz kargoya verildi.",
@@ -3959,7 +4104,7 @@ def api_admin_orders_update(order_id: int):
                 )
         db.commit()
         order = order_with_items(db, order_id)
-    if order and before["status"] != status:
+    if order and status and before["status"] != status:
         mail_result = send_order_status_email(order, status)
         if mail_result and not mail_result.success:
             security_logger.error(
@@ -4041,7 +4186,16 @@ def api_admin_login():
             response, status = api_response(True, "Admin girişi başarılı", data_payload)
             response["token"] = token
             response["user"] = {"id": admin["id"], "full_name": admin["username"], "email": admin["username"], "role": "admin"}
-            return response, status
+            flask_response = make_response(jsonify(response), status)
+            flask_response.set_cookie(
+                "admin_token",
+                token,
+                secure=IS_PRODUCTION,
+                httponly=True,
+                samesite="Lax",
+                max_age=60 * 60 * 24 * 7,
+            )
+            return flask_response
 
         legacy = db.execute("SELECT * FROM users WHERE email = ?", (username.lower(),)).fetchone()
         if legacy and legacy["role"] == "admin" and not legacy["is_banned"] and verify_password(password, legacy["password_hash"], legacy["password_salt"]):
@@ -4051,7 +4205,16 @@ def api_admin_login():
             response, status = api_response(True, "Admin girişi başarılı", data_payload)
             response["token"] = token
             response["user"] = {"id": legacy["id"], "full_name": legacy["full_name"], "email": legacy["email"], "role": "admin"}
-            return response, status
+            flask_response = make_response(jsonify(response), status)
+            flask_response.set_cookie(
+                "admin_token",
+                token,
+                secure=IS_PRODUCTION,
+                httponly=True,
+                samesite="Lax",
+                max_age=60 * 60 * 24 * 7,
+            )
+            return flask_response
 
     log_admin_login_attempt(username, False)
     return api_response(False, "Kullanıcı adı veya şifre hatalı", None, HTTPStatus.UNAUTHORIZED)
@@ -4060,7 +4223,10 @@ def api_admin_login():
 @app.route("/api/admin/logout", methods=["POST"])
 @require_admin_api
 def api_admin_logout():
-    return api_response(True, "Çıkış yapıldı", {})
+    response, status = api_response(True, "Çıkış yapıldı", {})
+    flask_response = make_response(jsonify(response), status)
+    flask_response.delete_cookie("admin_token")
+    return flask_response
 
 
 @app.route("/api/admin/profile", methods=["GET", "PATCH", "PUT"])
@@ -4099,6 +4265,190 @@ def api_admin_products():
     with connect() as db:
         rows = db.execute("SELECT * FROM products ORDER BY id DESC").fetchall()
     return api_response(True, "Ürünler listelendi", [row_to_dict(row) for row in rows])
+
+
+@app.route("/api/admin/offline-sync", methods=["POST"])
+@require_admin_api
+def api_admin_offline_sync():
+    """Çevrimdışı masaüstü uygulamasıyla ortak kayıtları çift yönlü eşitler."""
+    data = request.get_json(silent=True) or {}
+    now = datetime.now().isoformat(timespec="seconds")
+    with connect() as db:
+        for item in data.get("products") or []:
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+            current = db.execute(
+                "SELECT id FROM products WHERE LOWER(name) = LOWER(?) LIMIT 1",
+                (name,),
+            ).fetchone()
+            values = (
+                (item.get("category") or "Genel").strip(),
+                max(float(item.get("price") or 0), 0),
+                max(int(item.get("stock") or 0), 0),
+            )
+            if current:
+                db.execute(
+                    "UPDATE products SET category = ?, price = ?, stock = ? WHERE id = ?",
+                    (*values, current["id"]),
+                )
+            else:
+                db.execute(
+                    "INSERT INTO products (name, category, price, stock, image_url, active) "
+                    "VALUES (?, ?, ?, ?, '', 1)",
+                    (name, *values),
+                )
+
+        for item in data.get("patients") or []:
+            name = (item.get("name") or "").strip()
+            species = (item.get("species") or "").strip()
+            phone = (item.get("phone") or "").strip()
+            if not name or not species:
+                continue
+            current = db.execute(
+                """
+                SELECT id FROM clinic_pets
+                WHERE LOWER(name) = LOWER(?) AND COALESCE(phone, '') = ?
+                LIMIT 1
+                """,
+                (name, phone),
+            ).fetchone()
+            values = (
+                species,
+                (item.get("breed") or "").strip(),
+                str(item.get("age") or "").strip(),
+                (item.get("owner_name") or "").strip(),
+                phone,
+                "\n".join(
+                    value
+                    for value in [
+                        (item.get("notes") or "").strip(),
+                        (item.get("health_history") or "").strip(),
+                    ]
+                    if value
+                ),
+            )
+            if current:
+                db.execute(
+                    """
+                    UPDATE clinic_pets
+                    SET species = ?, breed = ?, age = ?, owner_name = ?,
+                        phone = ?, notes = ?, admin_hidden = 0
+                    WHERE id = ?
+                    """,
+                    (*values, current["id"]),
+                )
+            else:
+                db.execute(
+                    """
+                    INSERT INTO clinic_pets
+                    (name, species, breed, age, owner_name, phone, notes,
+                     admin_hidden, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+                    """,
+                    (name, *values, now),
+                )
+
+        for item in data.get("appointments") or []:
+            date = (item.get("appointment_date") or "").strip()
+            time = (item.get("appointment_time") or "").strip()
+            pet_name = (item.get("patient_name") or "").strip()
+            phone = (item.get("phone") or "").strip()
+            if not date or not time or not pet_name:
+                continue
+            current = db.execute(
+                """
+                SELECT id FROM appointments
+                WHERE appt_date = ? AND appt_time = ?
+                  AND LOWER(COALESCE(pet_name, '')) = LOWER(?)
+                LIMIT 1
+                """,
+                (date, time, pet_name),
+            ).fetchone()
+            owner_parts = (item.get("customer_name") or "").strip().split(" ", 1)
+            first_name = owner_parts[0] if owner_parts else "Müşteri"
+            last_name = owner_parts[1] if len(owner_parts) > 1 else ""
+            if current:
+                db.execute(
+                    """
+                    UPDATE appointments
+                    SET phone = ?, service = ?, notes = ?, status = ?,
+                        admin_hidden = 0
+                    WHERE id = ?
+                    """,
+                    (
+                        phone,
+                        (item.get("service") or "Muayene").strip(),
+                        (item.get("notes") or "").strip(),
+                        item.get("status") or "pending",
+                        current["id"],
+                    ),
+                )
+            else:
+                try:
+                    db.execute(
+                        """
+                        INSERT INTO appointments
+                        (first_name, last_name, phone, email, pet_type, pet_name,
+                         service, appt_date, appt_time, notes, status, created_at)
+                        VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            first_name,
+                            last_name,
+                            phone,
+                            (item.get("species") or "Belirtilmedi").strip(),
+                            pet_name,
+                            (item.get("service") or "Muayene").strip(),
+                            date,
+                            time,
+                            (item.get("notes") or "").strip(),
+                            item.get("status") or "pending",
+                            item.get("created_at") or now,
+                        ),
+                    )
+                except Exception:
+                    security_logger.info(
+                        "offline_sync_appointment_skipped date=%s time=%s pet=%s",
+                        date,
+                        time,
+                        pet_name,
+                    )
+        db.commit()
+        products = [
+            row_to_dict(row)
+            for row in db.execute("SELECT * FROM products ORDER BY id").fetchall()
+        ]
+        patients = [
+            row_to_dict(row)
+            for row in db.execute(
+                """
+                SELECT name, species, breed, age, owner_name, phone, notes, created_at
+                FROM clinic_pets WHERE COALESCE(admin_hidden, 0) = 0
+                ORDER BY id
+                """
+            ).fetchall()
+        ]
+        appointments = [
+            row_to_dict(row)
+            for row in db.execute(
+                """
+                SELECT pet_name, first_name, last_name, phone, service, notes,
+                       status, appt_date, appt_time, created_at
+                FROM appointments WHERE COALESCE(admin_hidden, 0) = 0
+                ORDER BY id
+                """
+            ).fetchall()
+        ]
+    return api_response(
+        True,
+        "Çift yönlü eşitleme tamamlandı",
+        {
+            "products": products,
+            "patients": patients,
+            "appointments": appointments,
+        },
+    )
 
 
 @app.route("/api/admin/products/add", methods=["POST"])
