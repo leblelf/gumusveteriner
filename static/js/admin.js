@@ -72,14 +72,19 @@
   }
 
   function showLoginOnly() {
-    $("#adminLogin").hidden = false;
-    $("#adminApp").hidden = true;
+    const login = $("#adminLogin");
+    const app = $("#adminApp");
+    if (login) login.hidden = false;
+    if (app) app.hidden = true;
   }
 
   function showApp() {
-    $("#adminLogin").hidden = true;
-    $("#adminApp").hidden = false;
-    $("#adminName").textContent = document.body.dataset.adminName || "admin";
+    const login = $("#adminLogin");
+    const app = $("#adminApp");
+    const adminName = $("#adminName");
+    if (login) login.hidden = true;
+    if (app) app.hidden = false;
+    if (adminName) adminName.textContent = document.body.dataset.adminName || "admin";
   }
 
   async function handleLogin(event) {

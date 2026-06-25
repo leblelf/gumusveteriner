@@ -2386,8 +2386,6 @@ def admin_panel() -> str:
 @app.route("/admin/login")
 def admin_login_page() -> str:
     """Web admin giriş ekranı; başarılı girişten sonra /admin paneline döner."""
-    if current_admin_payload():
-        return redirect("/admin")
     user = get_request_session_user()
     if user and user["role"] != "admin":
         return Response("Bu panel yalnızca yöneticiler içindir.", status=HTTPStatus.FORBIDDEN)

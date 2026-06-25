@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/css/admin.css?v={{ asset_version }}">
 </head>
 <body class="admin-body" data-login-only="{{ 'true' if login_only|default(false) else 'false' }}" data-admin-name="{{ admin_username }}">
+  {% if login_only|default(false) %}
   <main id="adminLogin" class="admin-login" aria-label="Admin giriş ekranı">
     <section class="login-card">
       <img src="/static/logo.jpeg" alt="Gümüş Veteriner logosu" class="login-logo">
@@ -29,6 +30,7 @@
       </form>
     </section>
   </main>
+  {% else %}
 
   <div id="adminApp" class="admin-shell" hidden>
     <aside id="adminSidebar" class="admin-sidebar">
@@ -169,6 +171,7 @@
       </section>
     </section>
   </div>
+  {% endif %}
 
   <script src="/static/js/admin.js?v={{ asset_version }}" defer></script>
 </body>
