@@ -17,37 +17,37 @@
       <h1>Admin Girişi</h1>
       <p class="muted">Yönetim paneline yalnızca yetkili kullanıcılar erişebilir.</p>
       <form id="adminLoginForm" class="stack-form">
-        <label>
-          Kullanıcı adı veya e-posta
-          <input name="username" type="text" autocomplete="username" required>
-        </label>
-        <label>
-          Şifre
-          <input name="password" type="password" autocomplete="current-password" required>
-        </label>
+        <label>Kullanıcı adı veya e-posta<input name="username" type="text" autocomplete="username" required></label>
+        <label>Şifre<input name="password" type="password" autocomplete="current-password" required></label>
         <button type="submit" class="primary-btn">Giriş Yap</button>
         <p id="loginMessage" class="form-message" role="status"></p>
       </form>
     </section>
   </main>
   {% else %}
-
   <div id="adminApp" class="admin-shell" hidden>
     <aside id="adminSidebar" class="admin-sidebar">
       <div class="brand">
         <img src="/static/logo.jpeg" alt="Gümüş Veteriner logosu">
-        <div>
-          <strong>Gümüş Veteriner</strong>
-          <span>Web Admin</span>
-        </div>
+        <div><strong>Gümüş Veteriner</strong><span>Web Admin</span></div>
       </div>
       <nav class="side-nav" aria-label="Admin menüsü">
         <button class="nav-item active" data-section="dashboard">Dashboard</button>
-        <button class="nav-item" data-section="products">Ürünler</button>
         <button class="nav-item" data-section="appointments">Randevular</button>
-        <button class="nav-item" data-section="orders">Siparişler</button>
-        <button class="nav-item" data-section="users">Kullanıcılar</button>
-        <button class="nav-item" data-section="pets">Hasta Kayıtları</button>
+        <button class="nav-item" data-section="pets">Pet Listesi</button>
+        <button class="nav-item" data-section="hospitalizations">Yatan Hastalar</button>
+        <button class="nav-item" data-section="products">Ürünler</button>
+        <button class="nav-item" data-section="orders">Gelen Siparişler</button>
+        <button class="nav-item" data-section="reviews">Yorumlar</button>
+        <button class="nav-item" data-section="contacts">Sorular</button>
+        <button class="nav-item" data-section="site-texts">Site Yazıları</button>
+        <button class="nav-item" data-section="users">Üyeler</button>
+        <button class="nav-item" data-section="sms">SMS Gönder</button>
+        <button class="nav-item" data-section="slots">Randevu Saatleri</button>
+        <button class="nav-item" data-section="services">Hizmetler</button>
+        <button class="nav-item" data-section="settings">Ayarlar & Klinik</button>
+        <button class="nav-item" data-section="profile">Admin Profili</button>
+        <button class="nav-item" data-section="help">Yardım & Kullanım</button>
       </nav>
       <button id="adminLogout" class="ghost-btn full">Çıkış Yap</button>
     </aside>
@@ -57,10 +57,7 @@
     <section class="admin-main">
       <header class="admin-topbar">
         <button id="sidebarToggle" class="icon-btn" type="button" aria-label="Menüyü aç">☰</button>
-        <div>
-          <p class="eyebrow">Yönetim paneli</p>
-          <h1 id="pageTitle">Dashboard</h1>
-        </div>
+        <div><p class="eyebrow">Yönetim paneli</p><h1 id="pageTitle">Dashboard</h1></div>
         <div class="topbar-actions">
           <button id="themeToggle" class="ghost-btn" type="button">Karanlık Tema</button>
           <span id="adminName" class="admin-pill"></span>
@@ -72,103 +69,74 @@
       <section id="section-dashboard" class="panel-section active-section">
         <div class="stats-grid" id="dashboardStats"></div>
         <div class="content-grid">
-          <article class="panel-card wide">
-            <div class="panel-head">
-              <h2>Aylık Satış Grafiği</h2>
-              <span class="muted">Son 6 ay</span>
-            </div>
-            <div id="salesChart" class="bar-chart"></div>
-          </article>
-          <article class="panel-card">
-            <div class="panel-head">
-              <h2>Son İşlemler</h2>
-              <button class="small-btn" data-refresh="dashboard">Yenile</button>
-            </div>
-            <div id="recentActivity" class="activity-list"></div>
-          </article>
+          <article class="panel-card wide"><div class="panel-head"><h2>Aylık Satış Grafiği</h2><span class="muted">Son 6 ay</span></div><div id="salesChart" class="bar-chart"></div></article>
+          <article class="panel-card"><div class="panel-head"><h2>Son İşlemler</h2><button class="small-btn" data-refresh="dashboard">Yenile</button></div><div id="recentActivity" class="activity-list"></div></article>
+        </div>
+      </section>
+
+      <section id="section-appointments" class="panel-section"><div class="panel-card"><div class="panel-head"><h2>Randevu Yönetimi</h2><input id="appointmentSearch" class="search-input compact" type="search" placeholder="Randevu ara..."></div><div id="appointmentsList" class="record-list"></div></div></section>
+
+      <section id="section-pets" class="panel-section">
+        <div class="panel-card">
+          <div class="panel-head"><h2>Pet Listesi</h2><button class="primary-btn" data-open-form="petForm">Yeni Hasta</button></div>
+          <input id="petSearch" class="search-input" type="search" placeholder="Hasta, sahip veya telefon ara...">
+          <form id="petForm" class="grid-form collapsible-form" hidden>
+            <input type="hidden" name="id"><input type="hidden" name="source" value="clinic">
+            <label>Hayvan adı<input name="name" required></label><label>Tür<input name="species" required></label><label>Irk<input name="breed"></label><label>Yaş<input name="age"></label><label>Sahip adı<input name="owner_name"></label><label>Telefon<input name="phone"></label>
+            <label class="wide-field">Notlar<textarea name="notes" rows="3"></textarea></label>
+            <button type="submit" class="primary-btn">Kaydet</button><button type="button" class="ghost-btn" data-close-form="petForm">Vazgeç</button>
+          </form>
+          <div id="petsList" class="record-list"></div>
+        </div>
+      </section>
+
+      <section id="section-hospitalizations" class="panel-section">
+        <div class="panel-card">
+          <div class="panel-head"><h2>Yatan Hastalar</h2><button class="primary-btn" data-open-form="hospitalForm">Yeni Yatış</button></div>
+          <input id="hospitalSearch" class="search-input" type="search" placeholder="Hasta, sahip, oda veya tanı ara...">
+          <form id="hospitalForm" class="grid-form collapsible-form" hidden>
+            <label>Kayıtlı pet<select name="pet_record_key" id="hospitalPetSelect"><option value="">Yeni hasta</option></select></label>
+            <label>Pet adı<input name="pet_name"></label><label>Tür<input name="species"></label><label>Sahip<input name="owner_name"></label><label>Telefon<input name="phone"></label><label>Oda<input name="room"></label>
+            <label>Tanı / yatış nedeni<input name="diagnosis" required></label><label class="wide-field">Tedavi planı<textarea name="treatment" rows="3" required></textarea></label><label class="wide-field">Not<textarea name="notes" rows="2"></textarea></label>
+            <button type="submit" class="primary-btn">Yatışı Kaydet</button><button type="button" class="ghost-btn" data-close-form="hospitalForm">Vazgeç</button>
+          </form>
+          <div id="hospitalizationsList" class="record-list"></div>
         </div>
       </section>
 
       <section id="section-products" class="panel-section">
         <div class="panel-card">
-          <div class="panel-head">
-            <h2>Ürün Yönetimi</h2>
-            <button class="primary-btn" data-open-form="productForm">Yeni Ürün</button>
-          </div>
+          <div class="panel-head"><h2>Ürün Yönetimi</h2><button class="primary-btn" data-open-form="productForm">Yeni Ürün</button></div>
           <input id="productSearch" class="search-input" type="search" placeholder="Ürün adı, kategori veya stok ara...">
           <form id="productForm" class="grid-form collapsible-form" hidden>
-            <input type="hidden" name="id">
-            <label>Ürün adı<input name="name" required></label>
-            <label>Kategori<input name="category" value="Genel"></label>
-            <label>Fiyat<input name="price" type="number" min="0" step="0.01" required></label>
-            <label>Stok<input name="stock" type="number" min="0" step="1" required></label>
-            <label>Görsel URL<input name="image_url"></label>
-            <label class="check-line"><input name="active" type="checkbox" checked> Aktif ürün</label>
-            <button type="submit" class="primary-btn">Kaydet</button>
-            <button type="button" class="ghost-btn" data-close-form="productForm">Vazgeç</button>
+            <input type="hidden" name="id"><label>Ürün adı<input name="name" required></label><label>Kategori<input name="category" value="Genel"></label><label>Fiyat<input name="price" type="number" min="0" step="0.01" required></label><label>Stok<input name="stock" type="number" min="0" step="1" required></label><label>Görsel URL<input name="image_url"></label><label class="check-line"><input name="active" type="checkbox" checked> Aktif ürün</label>
+            <button type="submit" class="primary-btn">Kaydet</button><button type="button" class="ghost-btn" data-close-form="productForm">Vazgeç</button>
           </form>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Ürün</th><th>Kategori</th><th>Fiyat</th><th>Stok</th><th>Durum</th><th>İşlem</th></tr></thead>
-              <tbody id="productsTable"></tbody>
-            </table>
-          </div>
+          <div class="table-wrap"><table><thead><tr><th>Ürün</th><th>Kategori</th><th>Fiyat</th><th>Stok</th><th>Durum</th><th>İşlem</th></tr></thead><tbody id="productsTable"></tbody></table></div>
         </div>
       </section>
 
-      <section id="section-appointments" class="panel-section">
-        <div class="panel-card">
-          <div class="panel-head">
-            <h2>Randevu Yönetimi</h2>
-            <input id="appointmentSearch" class="search-input compact" type="search" placeholder="Randevu ara...">
-          </div>
-          <div id="appointmentsList" class="record-list"></div>
-        </div>
-      </section>
+      <section id="section-orders" class="panel-section"><div class="panel-card"><div class="panel-head"><h2>Gelen Siparişler</h2><input id="orderSearch" class="search-input compact" type="search" placeholder="Sipariş ara..."></div><div id="ordersList" class="record-list"></div></div></section>
 
-      <section id="section-orders" class="panel-section">
-        <div class="panel-card">
-          <div class="panel-head">
-            <h2>Sipariş Yönetimi</h2>
-            <input id="orderSearch" class="search-input compact" type="search" placeholder="Sipariş ara...">
-          </div>
-          <div id="ordersList" class="record-list"></div>
-        </div>
-      </section>
+      <section id="section-reviews" class="panel-section"><div class="panel-card"><div class="panel-head"><h2>Yorumlar</h2><input id="reviewSearch" class="search-input compact" type="search" placeholder="Yorum ara..."></div><div id="reviewsList" class="record-list"></div></div></section>
 
-      <section id="section-users" class="panel-section">
-        <div class="panel-card">
-          <div class="panel-head">
-            <h2>Kullanıcı Yönetimi</h2>
-            <input id="userSearch" class="search-input compact" type="search" placeholder="Ad, e-posta veya telefon ara...">
-          </div>
-          <div id="usersList" class="record-list"></div>
-        </div>
-      </section>
+      <section id="section-contacts" class="panel-section"><div class="panel-card"><div class="panel-head"><h2>Sorular</h2><input id="contactSearch" class="search-input compact" type="search" placeholder="Soru veya müşteri ara..."></div><div id="contactsList" class="record-list"></div></div></section>
 
-      <section id="section-pets" class="panel-section">
-        <div class="panel-card">
-          <div class="panel-head">
-            <h2>Hasta Kayıtları</h2>
-            <button class="primary-btn" data-open-form="petForm">Yeni Hasta</button>
-          </div>
-          <input id="petSearch" class="search-input" type="search" placeholder="Hasta, sahip veya telefon ara...">
-          <form id="petForm" class="grid-form collapsible-form" hidden>
-            <input type="hidden" name="id">
-            <input type="hidden" name="source" value="clinic">
-            <label>Hayvan adı<input name="name" required></label>
-            <label>Tür<input name="species" required></label>
-            <label>Irk<input name="breed"></label>
-            <label>Yaş<input name="age"></label>
-            <label>Sahip adı<input name="owner_name"></label>
-            <label>Telefon<input name="phone"></label>
-            <label class="wide-field">Notlar<textarea name="notes" rows="3"></textarea></label>
-            <button type="submit" class="primary-btn">Kaydet</button>
-            <button type="button" class="ghost-btn" data-close-form="petForm">Vazgeç</button>
-          </form>
-          <div id="petsList" class="record-list"></div>
-        </div>
-      </section>
+      <section id="section-site-texts" class="panel-section"><div class="panel-card"><div class="panel-head"><h2>Site Yazıları</h2><input id="siteTextSearch" class="search-input compact" type="search" placeholder="Yazı ara..."></div><div id="siteTextsList" class="record-list"></div></div></section>
+
+      <section id="section-users" class="panel-section"><div class="panel-card"><div class="panel-head"><h2>Üye Yönetimi</h2><input id="userSearch" class="search-input compact" type="search" placeholder="Ad, e-posta veya telefon ara..."></div><div id="usersList" class="record-list"></div></div></section>
+
+      <section id="section-sms" class="panel-section"><div class="panel-card"><div class="panel-head"><h2>SMS Gönder</h2><span class="muted">Ticari SMS için izinli kullanıcı ve İYS kaydı gereklidir.</span></div><form id="smsForm" class="grid-form"><label>Telefon<input name="phone" placeholder="05xxxxxxxxx" required></label><label class="wide-field">Mesaj<textarea name="message" rows="5" maxlength="480" required></textarea></label><button type="submit" class="primary-btn">SMS Gönder</button><p id="smsCounter" class="muted">0 / 480</p></form></div></section>
+
+      <section id="section-slots" class="panel-section"><div class="panel-card"><div class="panel-head"><h2>Randevu Saatleri</h2><input id="slotDate" class="search-input compact" type="date"></div><form id="slotForm" class="grid-form"><label>Saat<input name="time" type="time" required></label><label>Durum<select name="is_available"><option value="true">Uygun</option><option value="false">Kapalı</option></select></label><label>Not<input name="note"></label><button type="submit" class="primary-btn">Saati Kaydet</button></form><div id="slotsList" class="record-list"></div></div></section>
+
+      <section id="section-services" class="panel-section"><div class="panel-card"><div class="panel-head"><h2>Hizmetler</h2><button class="primary-btn" data-open-form="serviceForm">Yeni Hizmet</button></div><form id="serviceForm" class="grid-form collapsible-form" hidden><input type="hidden" name="id"><label>Hizmet adı<input name="name" required></label><label>Fiyat<input name="price" type="number" min="0" step="0.01"></label><label class="wide-field">Açıklama<textarea name="description" rows="3"></textarea></label><label class="check-line"><input name="active" type="checkbox" checked> Aktif</label><button type="submit" class="primary-btn">Kaydet</button><button type="button" class="ghost-btn" data-close-form="serviceForm">Vazgeç</button></form><div id="servicesList" class="record-list"></div></div></section>
+
+      <section id="section-settings" class="panel-section"><div class="panel-card"><h2>Ayarlar & Klinik</h2><p class="muted">Klinik bilgileri, site yazıları ve çalışma akışı için Site Yazıları, Randevu Saatleri ve Admin Profili ekranlarını kullanabilirsiniz. Bu web panel, masaüstü uygulamadaki aynı API iş mantığını kullanır.</p></div></section>
+
+      <section id="section-profile" class="panel-section"><div class="panel-card"><div class="panel-head"><h2>Admin Profili</h2></div><form id="profileForm" class="grid-form"><label>Kullanıcı adı / e-posta<input name="username" required></label><label>Yeni şifre<input name="password" type="password" placeholder="Boş bırakırsan değişmez"></label><button type="submit" class="primary-btn">Profili Kaydet</button></form></div></section>
+
+      <section id="section-help" class="panel-section"><div class="panel-card"><h2>Yardım & Kullanım</h2><div class="activity-list"><div class="activity-item"><strong>Randevu yönetimi</strong><p class="muted">Randevular ekranından talebi açın, durumu Onaylandı, Tamamlandı veya İptal olarak güncelleyin.</p></div><div class="activity-item"><strong>Ürün ve stok</strong><p class="muted">Ürünler ekranında fiyat ve stok alanlarını düzenleyin. Stok azaldığında dashboard uyarı verir.</p></div><div class="activity-item"><strong>Pet ve yatış</strong><p class="muted">Pet Listesi yeni kayıtları, Yatan Hastalar ise tanı, oda ve tedavi planını yönetir. Taburcu edilen kayıt geçmişte korunur.</p></div><div class="activity-item"><strong>Müşteri iletişimi</strong><p class="muted">Yorumlar ve Sorular ekranlarında müşteri mesajlarını yanıtlayın. Yanıtlar kullanıcı bildirimlerine ve uygun olduğunda e-posta adresine iletilir.</p></div></div></div></section>
     </section>
   </div>
   {% endif %}

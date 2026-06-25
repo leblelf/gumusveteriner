@@ -171,6 +171,8 @@ select:focus {
 .side-nav {
   display: grid;
   gap: 8px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .nav-item,
@@ -221,7 +223,7 @@ select:focus {
 
 .full {
   width: 100%;
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .admin-main {
